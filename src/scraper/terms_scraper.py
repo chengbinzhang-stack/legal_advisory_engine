@@ -69,6 +69,13 @@ class TermsScraper(BaseScraper):
             result = self._try_scrape(url)
             if result.success and len(result.raw_content) >= self.MIN_CONTENT_LENGTH:
                 return result
+            # If 404 or thin content, try common URL variations
+            if not result.success or len(result.raw_content) < self.MIN_CONTENT_LENGTH:
+                variations = self._url_variations(url)
+                for var_url in variations:
+                    var_result = self._try_scrape(var_url)
+                    if var_result.success and len(var_result.raw_content) >= self.MIN_CONTENT_LENGTH:
+                        return var_result
 
         base_url = self._get_base_url(url)
         domain = self._get_domain(url)
@@ -214,3 +221,35 @@ class TermsScraper(BaseScraper):
         from urllib.parse import urlparse
         parsed = urlparse(url)
         return parsed.netloc
+
+    def _url_variations(self, url: str) -> list:
+        """Generate URL variations to try when the original URL fails."""
+        variations = []
+        url_lower = url.lower()
+
+        # Common plural/singular swaps: dataset/datasets, term/terms, etc.
+        import re
+        # Try adding/removing 's' at the end of meaningful path segments
+        # e.g. .../terms-of-use-for-dataset -> .../terms-of-use-for-datasets
+        # e.g. .../terms-of-use-for-datasets -> .../terms-of-use-for-dataset
+        for singular, plural in [
+            ("dataset", "datasets"),
+            ("term", "terms"),
+            ("condition", "conditions"),
+            ("policy", "policies"),
+        ]:
+            if singular in url_lower and plural not in url_lower:
+                var = url_lower.replace(singular, plural, 1)
+                variations.append(var)
+            elif plural in url_lower and singular not in url_lower:
+                var = url_lower.replace(plural, singular, 1)
+                variations.append(var)
+
+        # Try appending/removing common suffixes
+        if not url_lower.endswith("/"):
+            variations.append(url.rstrip("/") + "/")
+        if url_lower.endswith("/"):
+            variations.append(url.rstrip("/"))
+
+        # Try with/without trailing slash variations already covered above
+        return variations
