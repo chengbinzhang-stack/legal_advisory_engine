@@ -4,6 +4,7 @@ import httpx
 from bs4 import BeautifulSoup
 from src.models.website_data import ScrapedDocument
 from src.scraper.base_scraper import BaseScraper
+from src.scraper.site_explorer import SiteExplorer
 from datetime import datetime
 
 
@@ -96,6 +97,19 @@ class TermsScraper(BaseScraper):
         for path in self.COMMON_PATHS:
             terms_url = base_url.rstrip("/") + path
             result = self._try_scrape(terms_url)
+            if result.success and len(result.raw_content) >= self.MIN_CONTENT_LENGTH:
+                return result
+
+        # 6. Site exploration - crawl the site to discover legal pages
+        explorer = SiteExplorer(max_depth=2, max_links=30, timeout=self.timeout, user_agent=self.user_agent)
+        discovery = explorer.discover_legal_pages(base_url)
+        for terms_url in discovery.get("terms_of_use", [])[:10]:
+            result = self._try_scrape(terms_url)
+            if result.success and len(result.raw_content) >= self.MIN_CONTENT_LENGTH:
+                return result
+        # Also try other_legal pages (disclaimers, notices, etc.)
+        for legal_url in discovery.get("other_legal", [])[:10]:
+            result = self._try_scrape(legal_url)
             if result.success and len(result.raw_content) >= self.MIN_CONTENT_LENGTH:
                 return result
 

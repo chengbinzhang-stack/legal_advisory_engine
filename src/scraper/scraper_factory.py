@@ -4,6 +4,7 @@ from src.scraper.base_scraper import BaseScraper
 from src.scraper.terms_scraper import TermsScraper
 from src.scraper.privacy_scraper import PrivacyScraper
 from src.scraper.robots_scraper import RobotsScraper
+from src.scraper.site_explorer import SiteExplorer
 
 class ScraperFactory:
     """Factory for creating appropriate scraper instances."""
@@ -12,6 +13,7 @@ class ScraperFactory:
         "terms_of_use": TermsScraper,
         "privacy_policy": PrivacyScraper,
         "robots_txt": RobotsScraper,
+        "site_explorer": SiteExplorer,
     }
 
     @classmethod
