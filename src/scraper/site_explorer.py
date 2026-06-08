@@ -10,30 +10,37 @@ class SiteExplorer(BaseScraper):
     """
     Explore a website to discover legal document pages.
 
-    Given a starting URL (e.g., about page), crawls navigation links
-    to find terms of use, privacy policy, and other legal pages.
+    Starting from a homepage, prioritizes links whose URL or text
+    contains legal keywords (terms, privacy, about, legal, etc.)
+    to quickly find the relevant pages without exhaustive crawling.
     """
 
-    LEGAL_PATTERNS = [
+    LEGAL_URL_PATTERNS = [
         "terms", "condition", "agreement", "legal", "privacy",
         "policy", "notice", "disclaimer", "guideline", "rule",
         "use-policy", "acceptable-use", "user-agreement", "statement",
+        "permission", "data-policy", "intellectual-property",
     ]
 
-    NAVIGATION_TAGS = ["nav", "header", "footer", "aside", "menu", "sidebar"]
+    LEGAL_LINK_TEXT_KEYWORDS = [
+        "terms", "conditions", "privacy", "legal", "about",
+        "disclaimer", "notice", "policy", "agreement", "permission",
+        "data use", "data policy", "intellectual", "copyright",
+    ]
 
-    def __init__(self, max_depth: int = 2, max_links: int = 50, *args, **kwargs):
+    def __init__(self, max_depth: int = 2, max_links: int = 30, *args, **kwargs):
         """
         Initialize SiteExplorer.
 
         Args:
             max_depth: Maximum crawl depth from starting URL
-            max_links: Maximum number of links to collect per page
+            max_links: Maximum number of candidate links to check per page
         """
         super().__init__(*args, **kwargs)
         self.max_depth = max_depth
         self.max_links = max_links
         self._visited: Set[str] = set()
+        self._root_domain: str = ""
 
     def discover_legal_pages(self, start_url: str) -> Dict[str, List[str]]:
         """
@@ -41,6 +48,7 @@ class SiteExplorer(BaseScraper):
 
         Returns a dict mapping category to list of discovered URLs.
         """
+        self._root_domain = self._get_root_domain(start_url)
         results = {
             "terms_of_use": [],
             "privacy_policy": [],
@@ -51,7 +59,6 @@ class SiteExplorer(BaseScraper):
         self._visited.clear()
         self._crawl(start_url, depth=0, results=results)
 
-        # Dedupe
         for key in results:
             results[key] = list(set(results[key]))
 
@@ -81,44 +88,49 @@ class SiteExplorer(BaseScraper):
             if page_category:
                 results[page_category].append(final_url)
 
-            # Find and crawl navigation links
+            # Extract and follow legal-relevant links
             if depth < self.max_depth:
-                nav_links = self._extract_nav_links(soup, final_url)
-                for link in nav_links[:self.max_links]:
+                links = self._find_legal_links(soup, final_url)
+                for link in links[:self.max_links]:
                     self._crawl(link, depth + 1, results)
 
         except Exception:
             pass
 
-    def _extract_nav_links(self, soup: BeautifulSoup, base_url: str) -> List[str]:
-        """Extract navigation links from the page."""
-        links = []
+    def _find_legal_links(self, soup: BeautifulSoup, base_url: str) -> List[str]:
+        """
+        Find links on the page that point to potential legal documents.
+
+        Checks BOTH the URL path AND the visible link text for legal keywords.
+        Returns deduplicated list of matching absolute URLs.
+        """
+        candidates = []
         seen = set()
 
-        # Extract from navigation elements first
-        for tag in self.NAVIGATION_TAGS:
-            for element in soup.find_all(tag):
-                for a_tag in element.find_all("a", href=True):
-                    href = a_tag["href"]
-                    resolved = self._resolve_url(href, base_url)
-                    if resolved and resolved not in seen:
-                        normalized = self._normalize_url(resolved)
-                        if self._is_same_domain(normalized, base_url):
-                            seen.add(normalized)
-                            links.append(resolved)
+        for a_tag in soup.find_all("a", href=True):
+            href = a_tag.get("href", "")
+            link_text = a_tag.get_text(strip=True).lower()
 
-        # Fall back to all links if navigation is sparse
-        if len(links) < 5:
-            for a_tag in soup.find_all("a", href=True):
-                href = a_tag["href"]
-                resolved = self._resolve_url(href, base_url)
-                if resolved and resolved not in seen:
-                    normalized = self._normalize_url(resolved)
-                    if self._is_same_domain(normalized, base_url):
-                        seen.add(normalized)
-                        links.append(resolved)
+            resolved = self._resolve_url(href, base_url)
+            if not resolved:
+                continue
 
-        return links
+            normalized = self._normalize_url(resolved)
+            if normalized in seen:
+                continue
+            if not self._is_same_root_domain(resolved, base_url):
+                continue
+
+            # Check URL path for legal keywords
+            url_match = any(pat in resolved.lower() for pat in self.LEGAL_URL_PATTERNS)
+            # Check link text for legal keywords
+            text_match = any(kw in link_text for kw in self.LEGAL_LINK_TEXT_KEYWORDS)
+
+            if url_match or text_match:
+                seen.add(normalized)
+                candidates.append(resolved)
+
+        return candidates
 
     def _classify_url(self, url: str) -> Optional[str]:
         """Classify a URL by its path."""
@@ -127,7 +139,8 @@ class SiteExplorer(BaseScraper):
         if any(k in url_lower for k in ["terms-of-use", "terms-of-service",
                                          "terms-and-conditions", "conditions",
                                          "user-agreement", "acceptable-use",
-                                         "use-policy", "site-terms", "legal/terms"]):
+                                         "use-policy", "site-terms", "legal/terms",
+                                         "summary-terms"]):
             return "terms_of_use"
 
         if any(k in url_lower for k in ["privacy", "privacy-policy", "privacy-notice"]):
@@ -148,9 +161,6 @@ class SiteExplorer(BaseScraper):
             return None
 
         if href.startswith("http://") or href.startswith("https://"):
-            parsed = urlparse(href)
-            if not self._is_same_domain(parsed.netloc, base_url):
-                return None
             return href
 
         return urljoin(base_url, href)
@@ -161,13 +171,21 @@ class SiteExplorer(BaseScraper):
         path = parsed.path.rstrip("/").lower()
         return f"{parsed.scheme}://{parsed.netloc}{path}"
 
-    def _is_same_domain(self, url1: str, url2: str) -> bool:
-        """Check if two URLs are from the same domain."""
+    def _get_root_domain(self, url: str) -> str:
+        """Get the root domain (e.g., worldbank.org from data360.worldbank.org)."""
+        parsed = urlparse(url)
+        parts = parsed.netloc.split(".")
+        if len(parts) >= 2:
+            return ".".join(parts[-2:])
+        return parsed.netloc
+
+    def _is_same_root_domain(self, url1: str, url2: str) -> bool:
+        """Check if two URLs share the same root domain (e.g., worldbank.org)."""
         p1 = urlparse(url1)
         p2 = urlparse(url2)
-        return p1.netloc == p2.netloc or (
-            p1.netloc.endswith(p2.netloc) or p2.netloc.endswith(p1.netloc)
-        )
+        root1 = self._get_root_domain(f"https://{p1.netloc}")
+        root2 = self._get_root_domain(f"https://{p2.netloc}")
+        return root1 == root2
 
     def find_legal_links_from_url(self, start_url: str) -> Dict[str, str]:
         """
@@ -176,7 +194,6 @@ class SiteExplorer(BaseScraper):
         Returns best guess of terms/privacy URLs found.
         """
         discovery = self.discover_legal_pages(start_url)
-
         terms = discovery.get("terms_of_use", [])
         privacy = discovery.get("privacy_policy", [])
         other = discovery.get("other_legal", [])
@@ -186,3 +203,70 @@ class SiteExplorer(BaseScraper):
             "privacy_policy": privacy[0] if privacy else None,
             "other_legal": other[:5],
         }
+
+    def scrape(self, url: str) -> "ScrapedDocument":
+        """
+        Scrape terms of use by exploring the site to discover the best candidate.
+
+        Uses site exploration to find legal pages starting from the given URL.
+        Returns the most promising terms-of-use page found.
+        """
+        from src.models.website_data import ScrapedDocument
+        from datetime import datetime
+
+        discovery = self.discover_legal_pages(url)
+        terms_urls = discovery.get("terms_of_use", [])
+        other_urls = discovery.get("other_legal", [])
+
+        all_candidates = terms_urls + other_urls
+        for candidate_url in all_candidates:
+            result = self._try_scrape(candidate_url)
+            if result.success and len(result.raw_content) >= 500:
+                return result
+
+        return ScrapedDocument(
+            document_type="terms_of_use",
+            url=url,
+            raw_content="",
+            scraped_at=datetime.now(),
+            success=False,
+            error_message="SiteExplorer: no terms page found through site exploration"
+        )
+
+    def _try_scrape(self, url: str) -> "ScrapedDocument":
+        """Try to scrape a single URL."""
+        from src.models.website_data import ScrapedDocument
+        from datetime import datetime
+
+        try:
+            response = httpx.get(url, headers=self._build_headers(),
+                                timeout=self.timeout, follow_redirects=True)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, "html.parser")
+                for elem in soup(["script", "style", "nav", "footer", "header", "aside", "form"]):
+                    elem.decompose()
+                content = soup.get_text(separator="\n", strip=True)
+                return ScrapedDocument(
+                    document_type="terms_of_use",
+                    url=str(response.url),
+                    raw_content=content,
+                    scraped_at=datetime.now(),
+                    success=True
+                )
+            return ScrapedDocument(
+                document_type="terms_of_use",
+                url=url,
+                raw_content="",
+                scraped_at=datetime.now(),
+                success=False,
+                error_message=f"HTTP {response.status_code}"
+            )
+        except Exception as e:
+            return ScrapedDocument(
+                document_type="terms_of_use",
+                url=url,
+                raw_content="",
+                scraped_at=datetime.now(),
+                success=False,
+                error_message=str(e)
+            )
