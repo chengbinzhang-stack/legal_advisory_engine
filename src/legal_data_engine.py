@@ -20,7 +20,10 @@ from src.rag.document_store import DocumentStore
 class LegalDataEngine:
     def __init__(self, config: EngineConfig = None):
         self.config = config or EngineConfig()
-        self.classifier = LegalClassifier()
+        self.classifier = LegalClassifier(
+            api_key=self.config.minimax_api_key,
+            base_url=self.config.minimax_base_url
+        )
         self.text_chunker = TextChunker(
             chunk_size=self.config.chunk_size,
             chunk_overlap=self.config.chunk_overlap,
