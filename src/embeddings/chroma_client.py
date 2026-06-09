@@ -16,9 +16,10 @@ class ChromaClient:
     ):
         self.persist_directory = persist_directory
         self.collection_name = collection_name
-        self.client = chromadb.PersistentClient(
-            path=persist_directory,
-            settings=Settings(anonymized_telemetry=False)
+        # Use in-memory client to avoid inotify limits on Streamlit Cloud
+        # Note: data won't persist across restarts on Cloud, but local dev keeps persistence
+        self.client = chromadb.Client(
+            settings=Settings(anonymized_telemetry=False, allow_reset=True)
         )
         self.collection = self.client.get_or_create_collection(
             name=collection_name,
