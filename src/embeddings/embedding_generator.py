@@ -1,45 +1,44 @@
-"""Generates embeddings using sentence-transformers."""
+"""Generates embeddings using TF-IDF (lightweight, no heavy deps)."""
 from typing import List, Optional
-from sentence_transformers import SentenceTransformer
-import torch
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+
 
 class EmbeddingGenerator:
-    """Generates embeddings using sentence-transformers."""
+    """
+    Generates embeddings using TF-IDF vectorizer.
+    Lightweight alternative to sentence-transformers for Streamlit Cloud deployment.
+    """
 
-    DEFAULT_MODEL = "all-MiniLM-L6-v2"
-
-    def __init__(
-        self,
-        model_name: str = DEFAULT_MODEL,
-        device: Optional[str] = None,
-        batch_size: int = 32
-    ):
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    def __init__(self, model_name: str = "tfidf", device: Optional[str] = None, batch_size: int = 32):
+        self.device = device or "cpu"
         self.batch_size = batch_size
-        self.model = SentenceTransformer(model_name, device=self.device)
+        self.vectorizer = TfidfVectorizer(max_features=384, min_df=1, max_df=0.95, ngram_range=(1, 3), stop_words="english")
+        self._fitted = False
 
-    def encode(
-        self,
-        texts: List[str],
-        batch_size: Optional[int] = None,
-        show_progress: bool = False
-    ) -> List[List[float]]:
-        """Generate embeddings for a list of texts."""
-        batch_size = batch_size or self.batch_size
-        embeddings = self.model.encode(
-            texts,
-            batch_size=batch_size,
-            show_progress_bar=show_progress,
-            convert_to_numpy=True
-        )
-        return embeddings.tolist()
+    def fit(self, texts: List[str]) -> None:
+        self.vectorizer.fit(texts)
+        self._fitted = True
+
+    def encode(self, texts: List[str], batch_size: Optional[int] = None, show_progress: bool = False) -> List[List[float]]:
+        if not self._fitted:
+            self.fit(texts)
+        return self.vectorizer.transform(texts).toarray().tolist()
 
     def encode_query(self, query: str) -> List[float]:
-        """Generate embedding for a single query."""
-        embedding = self.model.encode(query, convert_to_numpy=True)
-        return embedding.tolist()
+        if not self._fitted:
+            return np.zeros(384).tolist()
+        return self.vectorizer.transform([query]).toarray()[0].tolist()
+
+    def similarity(self, query_vec: List[float], doc_vecs: List[List[float]]) -> List[float]:
+        q = np.array(query_vec).reshape(1, -1)
+        d = np.array(doc_vecs)
+        max_dim = max(q.shape[1], d.shape[1])
+        q = np.pad(q, ((0, 0), (0, max_dim - q.shape[1])))
+        d = np.pad(d, ((0, 0), (0, max_dim - d.shape[1])))
+        return cosine_similarity(q, d)[0].tolist()
 
     @property
     def embedding_dim(self) -> int:
-        """Get the dimensionality of the embeddings."""
-        return self.model.get_sentence_embedding_dimension()
+        return 384
