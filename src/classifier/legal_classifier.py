@@ -30,11 +30,23 @@ PARAM_KEYWORDS: Dict[str, Dict[str, List[str]]] = {
     },
     "free_redistribute": {
         "allowed": ["redistribute", "share", "distribute", "publish", "republish"],
-        "forbidden": ["cannot redistribute", "no redistribution", "cannot share", "redistribution prohibited"]
+        "forbidden": [
+            "cannot redistribute", "no redistribution", "cannot share",
+            "redistribution prohibited", "may not redistribute", "not authorized to redistribute",
+            "prohibit redistribut", "redistribut not permitt",
+            "must not redistribut", "not allowed to redistribut",
+            "redistribut is prohibit", "redistribut is not allow",
+            "no right to", "retains all rights",
+        ]
     },
     "subscription_redistribute": {
         "allowed": ["redistribute", "share", "distribute", "sell"],
-        "forbidden": ["cannot redistribute", "no redistribution", "resale not allowed"]
+        "forbidden": [
+            "cannot redistribute", "no redistribution", "resale not allowed",
+            "redistribution is prohibit", "redistribut not permitt",
+            "must not redistribut", "may not redistribut",
+            "no right to redistribut", "retains all rights",
+        ]
     },
 }
 class LegalClassifier:
@@ -148,8 +160,18 @@ class LegalClassifier:
         keywords = self.param_keywords.get(param_name, {})
         allowed_keywords = keywords.get("allowed", [])
         forbidden_keywords = keywords.get("forbidden", [])
+
+        # Detect negation contexts: "must not X", "cannot X", "may not X", "prohibit X"
+        # When an allowed keyword appears near negation, it becomes a prohibition
+        negation_offset = self._count_negation_contexts(text_lower, allowed_keywords)
+
         allowed_count = sum(1 for kw in allowed_keywords if kw.lower() in text_lower)
         forbidden_count = sum(1 for kw in forbidden_keywords if kw.lower() in text_lower)
+        # Subtract negation-triggered allowed keywords from allowed count
+        allowed_count = max(0, allowed_count - negation_offset)
+        # Add negation contexts as additional forbidden evidence
+        forbidden_count += negation_offset
+
         excerpts = self._extract_excerpts(text, allowed_keywords + forbidden_keywords)
         if forbidden_count > allowed_count:
             permission = PermissionLevel.NOT_ALLOWED
@@ -169,6 +191,45 @@ class LegalClassifier:
             relevant_excerpts=excerpts,
             confidence_score=confidence
         )
+
+    def _count_negation_contexts(self, text_lower: str, allowed_keywords: List[str]) -> int:
+        """
+        Detect when allowed keywords appear in negation contexts.
+
+        Phrases like 'must not redistribute', 'cannot share', 'may not distribute'
+        mean the keyword is being prohibited, not allowed.
+
+        Returns the count of such negation-triggered instances.
+        """
+        import re
+        negation_patterns = [
+            r"must\s+not\s+\w+",     # must not distribute
+            r"cannot\s+\w+",         # cannot redistribute
+            r"may\s+not\s+\w+",     # may not distribute
+            r"shall\s+not\s+\w+",   # shall not redistribute
+            r"will\s+not\s+\w+",    # will not redistribute (in obligation context)
+            r"prohibit\S*\s+\w+",   # prohibit redistribution / prohibited from
+            r"not\s+authorized\s+to\s+\w+",   # not authorized to redistribute
+            r"not\s+permitted\s+to\s+\w+",    # not permitted to distribute
+            r"no\s+right\s+to\s+\w+",          # no right to redistribute
+            r"right\s+to\s+\w+\s+is\s+reserved",  # rights reserved / all rights reserved
+        ]
+
+        count = 0
+        for kw in allowed_keywords:
+            kw_lower = kw.lower()
+            # Find all occurrences of the keyword
+            for match in re.finditer(re.escape(kw_lower), text_lower):
+                pos = match.start()
+                # Check context before the keyword (50 chars)
+                context_before = text_lower[max(0, pos-80):pos]
+                # Check if any negation pattern precedes the keyword within that window
+                for neg_pat in negation_patterns:
+                    if re.search(neg_pat, context_before):
+                        count += 1
+                        break
+        return count
+
     def _extract_excerpts(
         self,
         text: str,
