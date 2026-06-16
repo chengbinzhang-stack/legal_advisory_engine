@@ -31,8 +31,11 @@ class LegalDataEngine:
         )
         self.embedding_generator = EmbeddingGenerator(
             model_name=self.config.embedding_model,
+            api_key=self.config.minimax_api_key,
+            group_id=self.config.minimax_group_id,
+            base_url=self.config.minimax_base_url,
+            batch_size=self.config.embedding_batch_size,
             device=self.config.embedding_device,
-            batch_size=self.config.embedding_batch_size
         )
         self.chroma_client = ChromaClient(
             persist_directory=self.config.chroma_persist_directory,

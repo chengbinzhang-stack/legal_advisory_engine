@@ -1,44 +1,88 @@
-"""Generates embeddings using TF-IDF (lightweight, no heavy deps)."""
+"""Generates embeddings using MiniMax embo-01 API."""
+import os
 from typing import List, Optional
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
+import httpx
 
 
 class EmbeddingGenerator:
     """
-    Generates embeddings using TF-IDF vectorizer.
-    Lightweight alternative to sentence-transformers for Streamlit Cloud deployment.
+    Generates embeddings using MiniMax embo-01 model via API.
+    Requires MINIMAX_API_KEY and MINIMAX_GROUP_ID environment variables,
+    or pass them directly via api_key and group_id.
     """
 
-    def __init__(self, model_name: str = "tfidf", device: Optional[str] = None, batch_size: int = 32):
-        self.device = device or "cpu"
-        self.batch_size = batch_size
-        self.vectorizer = TfidfVectorizer(max_features=384, min_df=1, max_df=0.95, ngram_range=(1, 3), stop_words="english")
-        self._fitted = False
+    EMBEDDING_API_URL = "https://api.minimax.chat/v1/embeddings"
+    BATCH_SIZE = 20  # safe batch size for API calls
 
-    def fit(self, texts: List[str]) -> None:
-        self.vectorizer.fit(texts)
-        self._fitted = True
+    def __init__(
+        self,
+        model_name: str = "embo-01",
+        api_key: Optional[str] = None,
+        group_id: Optional[str] = None,
+        base_url: str = "https://api.minimax.chat/v1",
+        batch_size: int = 32,
+        device: Optional[str] = None,
+    ):
+        self.model_name = model_name
+        self.api_key = api_key or os.environ.get("MINIMAX_API_KEY")
+        self.group_id = group_id or os.environ.get("MINIMAX_GROUP_ID")
+        self.base_url = base_url
+        self.batch_size = batch_size
+        self.device = device or "cpu"
+        self.http_client = httpx.Client(timeout=60.0)
+
+    def _call_api(self, texts: List[str]) -> List[List[float]]:
+        """Call MiniMax embeddings API for a batch of texts."""
+        if not self.api_key or not self.group_id:
+            raise ValueError(
+                "MINIMAX_API_KEY and MINIMAX_GROUP_ID must be set. "
+                "Set them as environment variables or pass api_key/group_id to constructor."
+            )
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": self.model_name,
+            "input_texts": texts,
+        }
+        response = self.http_client.post(
+            f"{self.base_url}/embeddings",
+            headers=headers,
+            json=payload,
+        )
+        response.raise_for_status()
+        result = response.json()
+        # Sort by index to maintain order
+        embeddings = sorted(result["data"], key=lambda x: x["index"])
+        return [e["embedding"] for e in embeddings]
 
     def encode(self, texts: List[str], batch_size: Optional[int] = None, show_progress: bool = False) -> List[List[float]]:
-        if not self._fitted:
-            self.fit(texts)
-        return self.vectorizer.transform(texts).toarray().tolist()
+        """
+        Encode a list of texts into embeddings (batch, for document storage).
+        Automatically batches requests to the API.
+        """
+        batch_size = batch_size or self.BATCH_SIZE
+        all_embeddings = []
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i + batch_size]
+            all_embeddings.extend(self._call_api(batch))
+        return all_embeddings
 
     def encode_query(self, query: str) -> List[float]:
-        if not self._fitted:
-            return np.zeros(384).tolist()
-        return self.vectorizer.transform([query]).toarray()[0].tolist()
+        """Encode a single query string into an embedding vector."""
+        return self._call_api([query])[0]
 
     def similarity(self, query_vec: List[float], doc_vecs: List[List[float]]) -> List[float]:
+        """Compute cosine similarity between query vector and document vectors."""
+        # Import here to avoid hard dependency if not needed
+        from sklearn.metrics.pairwise import cosine_similarity
+        import numpy as np
         q = np.array(query_vec).reshape(1, -1)
         d = np.array(doc_vecs)
-        max_dim = max(q.shape[1], d.shape[1])
-        q = np.pad(q, ((0, 0), (0, max_dim - q.shape[1])))
-        d = np.pad(d, ((0, 0), (0, max_dim - d.shape[1])))
         return cosine_similarity(q, d)[0].tolist()
 
     @property
     def embedding_dim(self) -> int:
-        return 384
+        """Return embedding dimension (embo-01 returns 1024-dim vectors)."""
+        return 1024

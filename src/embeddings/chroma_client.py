@@ -1,4 +1,5 @@
 """ChromaDB client wrapper for vector storage."""
+import os
 import chromadb
 from chromadb.config import Settings
 from typing import List, Optional, Dict, Any
@@ -16,11 +17,18 @@ class ChromaClient:
     ):
         self.persist_directory = persist_directory
         self.collection_name = collection_name
-        # Use in-memory mode to avoid inotify limits on Streamlit Cloud
-        self.client = chromadb.PersistentClient(
-            path=":memory:",
-            settings=Settings(anonymized_telemetry=False, allow_reset=True)
-        )
+        # Detect Streamlit Cloud environment
+        if os.environ.get("STREAMLIT_CLOUD"):
+            # Use ephemeral in-memory client on Streamlit Cloud to avoid inotify limits
+            self.client = chromadb.EphemeralClient(
+                settings=Settings(anonymized_telemetry=False, allow_reset=True)
+            )
+        else:
+            # Use persistent client locally
+            self.client = chromadb.PersistentClient(
+                path=persist_directory,
+                settings=Settings(anonymized_telemetry=False, allow_reset=True)
+            )
         self.collection = self.client.get_or_create_collection(
             name=collection_name,
             metadata={"description": "Legal documents for RAG"}

@@ -17,9 +17,10 @@ class EngineConfig:
     respect_robots_txt: bool = True
     javascript_rendering: bool = False
 
-    embedding_model: str = "all-MiniLM-L6-v2"
+    embedding_model: str = "embo-01"
     embedding_batch_size: int = 32
     embedding_device: Optional[str] = None
+    minimax_group_id: Optional[str] = None
 
     chroma_persist_directory: str = "./chroma_db"
     chroma_collection_name: str = "legal_documents"
@@ -55,5 +56,7 @@ class EngineConfig:
             self.minimax_api_key = api_key
         if device := os.environ.get("EMBEDDING_DEVICE"):
             self.embedding_device = device
+        if group_id := os.environ.get("MINIMAX_GROUP_ID"):
+            self.minimax_group_id = group_id
         os.makedirs(self.chroma_persist_directory, exist_ok=True)
         os.makedirs(self.summaries_directory, exist_ok=True)
