@@ -24,21 +24,30 @@ class EmbeddingGenerator:
         device: Optional[str] = None,
     ):
         self.model_name = model_name
-        # Prefer explicit args > env var > Streamlit secrets
-        self.api_key = api_key or os.environ.get("MINIMAX_API_KEY")
-        self.group_id = group_id or os.environ.get("MINIMAX_GROUP_ID")
-        # Streamlit Cloud injects secrets as environment variables via st.secrets
-        # but they can also be accessed via this import if available
-        try:
-            import streamlit as st
-            self.api_key = self.api_key or st.secrets.get("MINIMAX_API_KEY")
-            self.group_id = self.group_id or st.secrets.get("MINIMAX_GROUP_ID")
-        except Exception:
-            pass  # not in Streamlit context
         self.base_url = base_url
         self.batch_size = batch_size
         self.device = device or "cpu"
         self.http_client = httpx.Client(timeout=60.0)
+        # Prefer explicit args > env var > Streamlit secrets
+        self.api_key = (
+            api_key
+            or os.environ.get("MINIMAX_API_KEY")
+            or self._safe_get_st_secrets("MINIMAX_API_KEY")
+        )
+        self.group_id = (
+            group_id
+            or os.environ.get("MINIMAX_GROUP_ID")
+            or self._safe_get_st_secrets("MINIMAX_GROUP_ID")
+        )
+
+    @staticmethod
+    def _safe_get_st_secrets(key: str) -> Optional[str]:
+        """Try to get a value from Streamlit secrets, silently fail if not in Streamlit context."""
+        try:
+            import streamlit as st
+            return st.secrets.get(key)
+        except Exception:
+            return None
 
     def _call_api(self, texts: List[str]) -> List[List[float]]:
         """Call MiniMax embeddings API for a batch of texts."""
