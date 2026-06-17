@@ -1,10 +1,13 @@
 """Abstract base class for all legal document scrapers."""
 from abc import ABC, abstractmethod
-from typing import Optional, Tuple
+from typing import Optional, Tuple, TYPE_CHECKING
 import httpx
 from bs4 import BeautifulSoup
 from src.models.website_data import ScrapedDocument
 from datetime import datetime
+
+if TYPE_CHECKING:
+    from src.scraper.browserless_session import BrowserlessSessionManager
 
 
 # SPA shell detection
@@ -43,11 +46,13 @@ class BaseScraper(ABC):
     """Abstract base class for all legal document scrapers."""
 
     def __init__(self, timeout: int = 30, user_agent: str = None,
-                 browserless_api_key: str = None):
+                 browserless_api_key: str = None,
+                 browserless_session: "BrowserlessSessionManager" = None):
         self.timeout = timeout
         self.user_agent = user_agent or "LegalAdvisoryBot/1.0 (Research Purpose)"
         self.client = httpx.Client(timeout=timeout)
         self.browserless_api_key = browserless_api_key
+        self.browserless_session = browserless_session
 
     @abstractmethod
     def scrape(self, url: str) -> ScrapedDocument:
@@ -73,6 +78,10 @@ class BaseScraper(ABC):
 
     def _fetch_with_browserless(self, url: str) -> Tuple[str, int]:
         """Fetch URL using Browserless API for JS-rendered content."""
+        # Use session if available (more efficient), otherwise fall back to direct API
+        if self.browserless_session:
+            return self.browserless_session.fetch(url)
+
         if not self.browserless_api_key:
             return "", 503
 
@@ -89,85 +98,13 @@ class BaseScraper(ABC):
         except Exception:
             return "", 503
 
-    def _try_scrape_with_fallback(self, url: str) -> ScrapedDocument:
-        """Try to scrape with httpx first, fallback to Browserless if SPA detected."""
-        from bs4 import BeautifulSoup
-
-        # Try httpx first
-        try:
-            response = self.client.get(url, headers=self._build_headers(), follow_redirects=True)
-            content = response.text
-
-            # Check if it's an SPA shell
-            if is_spa_shell(content) and self.browserless_api_key:
-                # Fallback to Browserless
-                content, status = self._fetch_with_browserless(url)
-                if status == 200 and len(content) > MIN_CONTENT_LENGTH_FOR_SPA:
-                    soup = BeautifulSoup(content, "html.parser")
-                    text = self._extract_text(soup)
-                    return ScrapedDocument(
-                        document_type=self.__class__.__name__.replace("Scraper", "").lower(),
-                        url=url,
-                        raw_content=text,
-                        scraped_at=datetime.now(),
-                        success=True
-                    )
-                elif status != 200:
-                    return ScrapedDocument(
-                        document_type=self.__class__.__name__.replace("Scraper", "").lower(),
-                        url=url,
-                        raw_content="",
-                        scraped_at=datetime.now(),
-                        success=False,
-                        error_message=f"Browserless failed with status {status}"
-                    )
-
-            # Normal httpx success
-            if response.status_code == 200:
-                soup = BeautifulSoup(content, "html.parser")
-                text = self._extract_text(soup)
-                return ScrapedDocument(
-                    document_type=self.__class__.__name__.replace("Scraper", "").lower(),
-                    url=str(response.url),
-                    raw_content=text,
-                    scraped_at=datetime.now(),
-                    success=True
-                )
-
-            return ScrapedDocument(
-                document_type=self.__class__.__name__.replace("Scraper", "").lower(),
-                url=url,
-                raw_content="",
-                scraped_at=datetime.now(),
-                success=False,
-                error_message=f"HTTP {response.status_code}"
-            )
-        except Exception as e:
-            # If httpx failed and we have Browserless, try it
-            if self.browserless_api_key:
-                content, status = self._fetch_with_browserless(url)
-                if status == 200:
-                    soup = BeautifulSoup(content, "html.parser")
-                    text = self._extract_text(soup)
-                    return ScrapedDocument(
-                        document_type=self.__class__.__name__.replace("Scraper", "").lower(),
-                        url=url,
-                        raw_content=text,
-                        scraped_at=datetime.now(),
-                        success=True
-                    )
-            return ScrapedDocument(
-                document_type=self.__class__.__name__.replace("Scraper", "").lower(),
-                url=url,
-                raw_content="",
-                scraped_at=datetime.now(),
-                success=False,
-                error_message=str(e)
-            )
-
     @staticmethod
-    def _extract_text(soup: BeautifulSoup) -> str:
-        """Extract text from BeautifulSoup object, removing script/style."""
+    def _extract_text(html_content) -> str:
+        """Extract text from HTML string or BeautifulSoup object."""
+        if isinstance(html_content, BeautifulSoup):
+            soup = html_content
+        else:
+            soup = BeautifulSoup(html_content, "html.parser")
         for element in soup(["script", "style", "nav", "footer", "header", "aside", "form"]):
             element.decompose()
         return soup.get_text(separator="\n", strip=True)

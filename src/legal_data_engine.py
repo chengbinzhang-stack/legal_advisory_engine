@@ -9,6 +9,7 @@ from config import EngineConfig
 from src.scraper.terms_scraper import TermsScraper
 from src.scraper.privacy_scraper import PrivacyScraper
 from src.scraper.robots_scraper import RobotsScraper
+from src.scraper.browserless_session import BrowserlessSessionManager
 from src.models.website_data import WebsiteData
 from src.models.legal_analysis import LegalAnalysis
 from src.classifier.legal_classifier import LegalClassifier
@@ -75,20 +76,35 @@ class LegalDataEngine:
         return analysis
 
     def _scrape_website(self, url: str) -> WebsiteData:
+        # Create a shared Browserless session for all scrapers (saves API units)
+        session_manager = None
+        if self.config.browserless_api_key:
+            session_manager = BrowserlessSessionManager(self.config.browserless_api_key)
+            session_manager.create_session()
+
         terms_scraper = TermsScraper(
             timeout=self.config.timeout,
-            browserless_api_key=self.config.browserless_api_key
+            browserless_api_key=self.config.browserless_api_key,
+            browserless_session=session_manager
         )
         privacy_scraper = PrivacyScraper(
             timeout=self.config.timeout,
-            browserless_api_key=self.config.browserless_api_key
+            browserless_api_key=self.config.browserless_api_key,
+            browserless_session=session_manager
         )
         robots_scraper = RobotsScraper(timeout=self.config.timeout)
         domain = self._extract_domain(url)
         website_data = WebsiteData(url=url, domain=domain)
-        website_data.documents.append(terms_scraper.scrape(url))
-        website_data.documents.append(privacy_scraper.scrape(url))
-        website_data.documents.append(robots_scraper.scrape(url))
+
+        try:
+            website_data.documents.append(terms_scraper.scrape(url))
+            website_data.documents.append(privacy_scraper.scrape(url))
+            website_data.documents.append(robots_scraper.scrape(url))
+        finally:
+            # Always close the session when done
+            if session_manager:
+                session_manager.close()
+
         website_data.processed_at = datetime.now()
         return website_data
 
