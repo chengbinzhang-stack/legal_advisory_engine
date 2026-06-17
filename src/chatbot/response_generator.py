@@ -107,6 +107,15 @@ class ResponseGenerator:
                 return param
         return None
 
+    def _source_label(self, source: str) -> str:
+        """Map source key to display label."""
+        labels = {
+            "terms_of_service": "Terms of Service",
+            "privacy_policy": "Privacy Policy",
+            "robots_txt": "robots.txt"
+        }
+        return labels.get(source, source)
+
     def _build_stored_response(
         self,
         query: str,
@@ -115,7 +124,7 @@ class ResponseGenerator:
         param_key: Optional[str],
         is_bucket_question: bool
     ) -> Dict[str, Any]:
-        """Build response from stored analysis with source snippets."""
+        """Build response from stored analysis with quoted source excerpts."""
         parts = []
 
         if is_bucket_question:
@@ -128,8 +137,7 @@ class ResponseGenerator:
             }
             parts.append(f"**Bucket {bucket_num}: {bucket_names.get(bucket_num, 'Unknown')}**")
             parts.append("")
-            parts.append(f"This classification was determined based on the full legal document analysis for {website_domain}.")
-            # Show which permissions drive this bucket
+            parts.append(f"Based on my analysis of the legal documents for {website_domain}.")
             perms = analysis.get("permissions", {})
             allowed = [k for k, v in perms.items() if v.get("level") == "allowed"]
             not_allowed = [k for k, v in perms.items() if v.get("level") == "not_allowed"]
@@ -143,18 +151,26 @@ class ResponseGenerator:
             if param_key in perms:
                 p = perms[param_key]
                 level = p.get("level", "uncertain")
-                reasoning = p.get("reasoning", "No reasoning available")
                 excerpts = p.get("relevant_excerpts", [])
+                source_docs = p.get("source_documents", [])
 
-                parts.append(f"**{param_key.replace('_', ' ').title()}:** {level.replace('_', ' ').upper()}")
-                parts.append("")
-                parts.append(f"**Reasoning:** {reasoning}")
+                # Build answer in requested format: "Yes/No, because [reason] as quoted in '...' in [Document]"
+                verb_map = {"allowed": "Yes", "not_allowed": "No", "uncertain": "Uncertain"}
+                verb = verb_map.get(level, "Uncertain")
+                param_display = param_key.replace("_", " ")
 
-                if excerpts:
+                parts.append(f"**{param_display.title()}:** {verb.upper()}")
+
+                if excerpts and source_docs:
                     parts.append("")
-                    parts.append("**Relevant excerpts from the legal document:**")
-                    for i, ex in enumerate(excerpts, 1):
-                        parts.append(f"  {i}. \"{ex}\"")
+                    parts.append(f"**Answer:** {verb}, you **{'can' if level == 'allowed' else 'cannot' if level == 'not_allowed' else 'may or may not be able to'}** {param_display}.")
+                    parts.append("")
+                    for i, (excerpt, src) in enumerate(zip(excerpts, source_docs), 1):
+                        doc_label = self._source_label(src)
+                        parts.append(f'  Reason {i}: "{excerpt}" — quoted in [{doc_label}]')
+                else:
+                    reasoning = p.get("reasoning", "No specific reasoning available.")
+                    parts.append(f"\n**Answer:** {verb}. {reasoning}")
 
         response_text = "\n".join(parts)
         return {

@@ -107,7 +107,8 @@ class LegalDataEngine:
                     "level": v.permission.value,
                     "confidence": v.confidence_score,
                     "reasoning": v.reasoning,
-                    "relevant_excerpts": v.relevant_excerpts
+                    "relevant_excerpts": v.relevant_excerpts,
+                    "source_documents": v.source_documents
                 } for k, v in analysis.permissions.items()
             },
             "unique_findings": analysis.unique_findings,
@@ -138,6 +139,7 @@ class LegalDataEngine:
                 permission=PermissionLevel(v["level"]),
                 reasoning=v.get("reasoning", ""),
                 relevant_excerpts=v.get("relevant_excerpts", []),
+                source_documents=v.get("source_documents", []),
                 confidence_score=v.get("confidence", 0.0)
             )
         return LegalAnalysis(

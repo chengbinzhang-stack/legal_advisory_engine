@@ -22,6 +22,7 @@ class PermissionAnalysis:
     permission: PermissionLevel
     reasoning: str
     relevant_excerpts: List[str] = field(default_factory=list)
+    source_documents: List[str] = field(default_factory=list)  # "terms_of_service" | "privacy_policy" | "robots_txt"
     confidence_score: float = 0.0
 
 @dataclass

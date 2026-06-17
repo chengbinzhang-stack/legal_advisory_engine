@@ -59,7 +59,7 @@ Also extract:
 
 Output ONLY a valid JSON object with this exact structure (no markdown, no explanation):
 {
-  "scraping": {"permission": "allowed|not_allowed|uncertain", "reasoning": "...", "reference_urls": [], "relevant_excerpts": ["exact text snippet from document that supports this decision"]},
+  "scraping": {"permission": "allowed|not_allowed|uncertain", "reasoning": "...", "reference_urls": [], "relevant_excerpts": [{"text": "exact quote from document", "source": "terms_of_service|privacy_policy|robots_txt"}]},
   "manual_collection": {"permission": "...", "reasoning": "...", "reference_urls": [], "relevant_excerpts": []},
   "storing": {"permission": "...", "reasoning": "...", "reference_urls": [], "relevant_excerpts": []},
   "free_display": {"permission": "...", "reasoning": "...", "reference_urls": [], "relevant_excerpts": []},
@@ -71,6 +71,7 @@ Output ONLY a valid JSON object with this exact structure (no markdown, no expla
 }
 
 Key rules:
+- For each relevant_excerpt, you MUST identify which of the 3 source documents it came from: "terms_of_service", "privacy_policy", or "robots_txt"
 - Look for explicit permission or prohibition language: "you may", "you can", "you must not", "prohibited", "not allowed", "restricted"
 - Check robots.txt references if present
 - Check API/developer terms links mentioned in the document
@@ -78,6 +79,7 @@ Key rules:
 - If multiple contradictory statements exist, use the more restrictive interpretation
 - "reference_urls" should list all relevant URLs found in the legal text itself (terms pages, API docs, privacy policy links, etc.)
 - Extract URLs from the text that are explicitly referenced (do not invent URLs)
+- IMPORTANT: All reasoning and excerpts must be grounded ONLY in the provided legal documents. Do not make inferences beyond what is stated.
 """
 
 
@@ -140,11 +142,25 @@ class LegalClassifier:
                 param_refs = param_data.get("reference_urls", [])
                 refs_text = f" (References: {', '.join(param_refs)})" if param_refs else ""
 
+                # Parse excerpts: new format is [{"text": "...", "source": "..."}]
+                raw_excerpts = param_data.get("relevant_excerpts", [])
+                excerpt_texts = []
+                source_docs = []
+                for ex in raw_excerpts:
+                    if isinstance(ex, dict):
+                        excerpt_texts.append(ex.get("text", ""))
+                        src = ex.get("source", "")
+                        if src:
+                            source_docs.append(src)
+                    elif isinstance(ex, str):
+                        excerpt_texts.append(ex)
+
                 permission = PermissionAnalysis(
                     parameter_name=param,
                     permission=PermissionLevel(perm_level),
                     reasoning=param_data.get("reasoning", "No reasoning provided") + refs_text,
-                    relevant_excerpts=param_data.get("relevant_excerpts", []),
+                    relevant_excerpts=[e for e in excerpt_texts if e],
+                    source_documents=source_docs,
                     confidence_score=0.95 if perm_level != "uncertain" else 0.5
                 )
                 permissions[param] = permission
