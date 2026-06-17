@@ -73,12 +73,14 @@ class EmbeddingGenerator:
             json=payload,
         )
         result = response.json()
-        if "data" not in result:
-            base_resp = result.get("base_resp", {})
-            status_code = base_resp.get("status_code", "unknown")
-            error_msg = base_resp.get("status_msg", str(result))
-            raise ValueError(f"MiniMax embeddings API error ({status_code}): {error_msg}")
+        base_resp = result.get("base_resp", {})
+        status_code = base_resp.get("status_code", 0)
+        status_msg = base_resp.get("status_msg", "")
+        if status_code != 0:
+            raise ValueError(f"MiniMax embeddings API error ({status_code}): {status_msg}")
         response.raise_for_status()
+        if "data" not in result:
+            raise ValueError(f"MiniMax embeddings API returned success but no data: {result}")
         embeddings = sorted(result["data"], key=lambda x: x["index"])
         return [e["embedding"] for e in embeddings]
 
