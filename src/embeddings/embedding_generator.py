@@ -53,6 +53,7 @@ class EmbeddingGenerator:
         """Call MiniMax embeddings API for a batch of texts.
         type: "db" for document storage, "query" for user query retrieval.
         """
+        if not self.api_key or not self.group_id:
             raise ValueError(
                 "MINIMAX_API_KEY and MINIMAX_GROUP_ID must be set. "
                 "Set them as environment variables or pass api_key/group_id to constructor."
