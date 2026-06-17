@@ -70,10 +70,15 @@ class EmbeddingGenerator:
             json=payload,
         )
         result = response.json()
+        print(f"[EmbeddingGenerator] API response: {result}")  # DEBUG
         if "data" not in result:
-            # API returned an error
-            error_msg = result.get("base_resp", {}).get("msg", str(result))
-            raise ValueError(f"MiniMax embeddings API error: {error_msg}")
+            # API returned an error — check base_resp for status code
+            base_resp = result.get("base_resp", {})
+            status_code = base_resp.get("status_code", result.get("status_code", "unknown"))
+            error_msg = base_resp.get("msg", str(result))
+            raise ValueError(
+                f"MiniMax embeddings API error ({status_code}): {error_msg}"
+            )
         response.raise_for_status()
         # Sort by index to maintain order
         embeddings = sorted(result["data"], key=lambda x: x["index"])
@@ -88,7 +93,12 @@ class EmbeddingGenerator:
         all_embeddings = []
         for i in range(0, len(texts), batch_size):
             batch = texts[i:i + batch_size]
-            all_embeddings.extend(self._call_api(batch))
+            try:
+                all_embeddings.extend(self._call_api(batch))
+            except Exception as e:
+                print(f"[EmbeddingGenerator] encode batch {i}-{i+len(batch)} failed: {e}")
+                print(f"[EmbeddingGenerator] texts[0] sample: {texts[0][:200] if texts else 'empty'}")
+                raise
         return all_embeddings
 
     def encode_query(self, query: str) -> List[float]:
