@@ -30,6 +30,7 @@ class EngineConfig:
     min_chunk_size: int = 100
 
     anthropic_api_key: Optional[str] = None
+    minimax_group_id = "2057705580675473651"
     minimax_api_key: Optional[str] = "sk-cp-qzt0Jl0fXRCv5d460DOTSfJz6FWAHj_oDHMKIYm0HCbGPSLcNSgijNr2vrm2Hy1CFINZK8i2bbDE_tGkJFWRT1u1Ary2lcXTjQAQ_kmGgZjT2a78bdZ0Q2Q"
     minimax_model: str = "MiniMax-Text-01"
     minimax_base_url: str = "https://api.minimax.chat/v1"

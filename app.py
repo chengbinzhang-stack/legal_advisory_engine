@@ -101,11 +101,27 @@ def display_analysis(analysis):
         st.subheader("Permission Summary")
         for param, perm in analysis.permissions.items():
             if perm.permission == PermissionLevel.ALLOWED:
-                st.write(f"[ALLOWED] {param}")
+                label = f"[ALLOWED] {param}"
             elif perm.permission == PermissionLevel.NOT_ALLOWED:
-                st.write(f"[DENIED] {param}")
+                label = f"[DENIED] {param}"
             else:
-                st.write(f"[UNCERTAIN] {param}")
+                label = f"[UNCERTAIN] {param}"
+            with st.expander(label):
+                if perm.reasoning:
+                    st.text(f"Reasoning: {perm.reasoning}")
+                if perm.relevant_excerpts:
+                    st.markdown("**Evidence:**")
+                    for i, exc in enumerate(perm.relevant_excerpts, 1):
+                        if isinstance(exc, dict):
+                            source = exc.get('source', '')
+                            text = exc.get('text', '')[:500]
+                            if source and source.startswith('http'):
+                                st.markdown(f"[{source}]({source})")
+                            elif source:
+                                st.text(f"Source: {source}")
+                            st.markdown(f"> \"{text}\"")
+                        else:
+                            st.markdown(f"> \"{str(exc)[:500]}\"")
     if analysis.unique_findings:
         st.subheader("Unique Findings")
         for finding in analysis.unique_findings:
@@ -204,6 +220,7 @@ def render_dashboard_page():
                 "Category": summary.get("category", "N/A"),
                 "Scraping": summary.get("permissions", {}).get("scraping", {}).get("level", "N/A"),
                 "Storing": summary.get("permissions", {}).get("storing", {}).get("level", "N/A"),
+                "Display": summary.get("permissions", {}).get("free_display", {}).get("level", "N/A"),
                 "Redistributing": summary.get("permissions", {}).get("free_redistribute", {}).get("level", "N/A")
             })
     if data:

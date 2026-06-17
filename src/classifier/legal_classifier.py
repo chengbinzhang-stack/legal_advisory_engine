@@ -59,7 +59,7 @@ Also extract:
 
 Output ONLY a valid JSON object with this exact structure (no markdown, no explanation):
 {
-  "scraping": {"permission": "allowed|not_allowed|uncertain", "reasoning": "...", "reference_urls": [], "relevant_excerpts": [{"text": "exact quote from document", "source": "terms_of_service|privacy_policy|robots_txt"}]},
+  "scraping": {"permission": "allowed|not_allowed|uncertain", "reasoning": "...", "reference_urls": [], "relevant_excerpts": [{"text": "exact quote from document", "source": "https://actual/url/path"}]},
   "manual_collection": {"permission": "...", "reasoning": "...", "reference_urls": [], "relevant_excerpts": []},
   "storing": {"permission": "...", "reasoning": "...", "reference_urls": [], "relevant_excerpts": []},
   "free_display": {"permission": "...", "reasoning": "...", "reference_urls": [], "relevant_excerpts": []},
@@ -71,7 +71,7 @@ Output ONLY a valid JSON object with this exact structure (no markdown, no expla
 }
 
 Key rules:
-- For each relevant_excerpt, you MUST identify which of the 3 source documents it came from: "terms_of_service", "privacy_policy", or "robots_txt"
+- For each relevant_excerpt, you MUST use the ACTUAL URL of the source document as the "source" field (e.g., "https://example.com/terms", "https://example.com/privacy", "https://example.com/robots.txt")
 - Look for explicit permission or prohibition language: "you may", "you can", "you must not", "prohibited", "not allowed", "restricted"
 - Check robots.txt references if present
 - Check API/developer terms links mentioned in the document
@@ -97,13 +97,16 @@ class LegalClassifier:
         text: str,
         website_url: str,
         website_domain: str,
-        robots_txt: str = ""
+        robots_txt: str = "",
+        document_urls: Dict[str, str] = None
     ) -> LegalAnalysis:
         """
         Classify permissions using LLM if available, otherwise fall back to heuristic.
         """
+        if document_urls is None:
+            document_urls = {}
         if self.llm_client:
-            return self._classify_with_llm(text, website_url, website_domain, robots_txt)
+            return self._classify_with_llm(text, website_url, website_domain, robots_txt, document_urls)
         else:
             return self._classify_heuristic(text, website_url, website_domain, robots_txt)
 
@@ -112,7 +115,8 @@ class LegalClassifier:
         text: str,
         website_url: str,
         website_domain: str,
-        robots_txt: str
+        robots_txt: str,
+        document_urls: Dict[str, str]
     ) -> LegalAnalysis:
         """
         Use LLM to analyze the legal document with full semantic understanding.
@@ -120,7 +124,17 @@ class LegalClassifier:
         # Truncate text to avoid token limits (first 8000 chars is usually enough for terms)
         text_to_analyze = text[:8000]
 
-        user_prompt = f"Website URL: {website_url}\nWebsite domain: {website_domain}\n\nLegal document text:\n{text_to_analyze}"
+        # Format document URLs for the prompt
+        doc_urls_str = "\n".join([f"- {doc_type}: {url}" for doc_type, url in document_urls.items()])
+
+        user_prompt = f"""Website URL: {website_url}
+Website domain: {website_domain}
+
+Source document URLs:
+{doc_urls_str}
+
+Legal document text:
+{text_to_analyze}"""
 
         try:
             response = self.llm_client.chat([
@@ -139,29 +153,24 @@ class LegalClassifier:
                 param_data = result.get(param, {})
                 perm_level = param_data.get("permission", "uncertain")
 
-                # Collect reference URLs specific to this parameter
-                param_refs = param_data.get("reference_urls", [])
-                refs_text = f" (References: {', '.join(param_refs)})" if param_refs else ""
-
-                # Parse excerpts: new format is [{"text": "...", "source": "..."}]
+                # Parse excerpts: [{"text": "...", "source": "actual_url"}]
                 raw_excerpts = param_data.get("relevant_excerpts", [])
-                excerpt_texts = []
-                source_docs = []
+                excerpt_list = []
                 for ex in raw_excerpts:
                     if isinstance(ex, dict):
-                        excerpt_texts.append(ex.get("text", ""))
+                        text = ex.get("text", "")
                         src = ex.get("source", "")
-                        if src:
-                            source_docs.append(src)
-                    elif isinstance(ex, str):
-                        excerpt_texts.append(ex)
+                        if text:
+                            excerpt_list.append({"text": text, "source": src})
+                    elif isinstance(ex, str) and ex:
+                        excerpt_list.append({"text": ex, "source": ""})
 
                 permission = PermissionAnalysis(
                     parameter_name=param,
                     permission=PermissionLevel(perm_level),
-                    reasoning=param_data.get("reasoning", "No reasoning provided") + refs_text,
-                    relevant_excerpts=[e for e in excerpt_texts if e],
-                    source_documents=source_docs,
+                    reasoning=param_data.get("reasoning", "No reasoning provided"),
+                    relevant_excerpts=excerpt_list,
+                    source_documents=[],  # No longer used, kept for backward compat
                     confidence_score=0.95 if perm_level != "uncertain" else 0.5
                 )
                 permissions[param] = permission

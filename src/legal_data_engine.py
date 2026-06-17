@@ -57,11 +57,17 @@ class LegalDataEngine:
             if doc.document_type == 'robots_txt' and doc.success:
                 robots_txt = doc.raw_content
                 break
+        # Build document_type -> url mapping for proper citation
+        document_urls = {
+            doc.document_type: doc.url
+            for doc in scraped_data.documents if doc.success
+        }
         analysis = self.classifier.classify_permissions(
             text=combined_text,
             website_url=url,
             website_domain=domain,
-            robots_txt=robots_txt
+            robots_txt=robots_txt,
+            document_urls=document_urls
         )
         self.document_store.store_website_data(scraped_data)
         self._save_analysis(analysis)
