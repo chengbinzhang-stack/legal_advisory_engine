@@ -5,7 +5,7 @@ from typing import Dict, List, Tuple, Optional
 from src.models.legal_analysis import (
     LegalAnalysis, PermissionAnalysis, PermissionLevel
 )
-from src.classifier.category_buckets import CATEGORY_DEFINITIONS, WebsiteCategory
+from src.classifier.category_buckets import CATEGORY_DEFINITIONS, WebsiteCategory, PARAM_TO_CATEGORY_FIELD
 
 
 def _build_llm_client(api_key: str, base_url: str):
