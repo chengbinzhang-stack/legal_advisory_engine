@@ -79,10 +79,12 @@ class EmbeddingGenerator:
         if status_code != 0:
             raise ValueError(f"MiniMax embeddings API error ({status_code}): {status_msg}")
         response.raise_for_status()
-        if "data" not in result:
-            raise ValueError(f"MiniMax embeddings API returned success but no data: {result}")
-        embeddings = sorted(result["data"], key=lambda x: x["index"])
-        return [e["embedding"] for e in embeddings]
+        # MiniMax returns {"vectors": [[...], ...], "base_resp": {...}}
+        if "vectors" in result:
+            return result["vectors"]
+        if "data" in result:
+            return [e["embedding"] for e in sorted(result["data"], key=lambda x: x["index"])]
+        raise ValueError(f"MiniMax embeddings API returned success but no vectors/data: {result}")
 
     def encode(self, texts: List[str], batch_size: Optional[int] = None, show_progress: bool = False) -> List[List[float]]:
         """
