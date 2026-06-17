@@ -49,9 +49,10 @@ class EmbeddingGenerator:
         except Exception:
             return None
 
-    def _call_api(self, texts: List[str]) -> List[List[float]]:
-        """Call MiniMax embeddings API for a batch of texts."""
-        if not self.api_key or not self.group_id:
+    def _call_api(self, texts: List[str], embedding_type: str = "db") -> List[List[float]]:
+        """Call MiniMax embeddings API for a batch of texts.
+        type: "db" for document storage, "query" for user query retrieval.
+        """
             raise ValueError(
                 "MINIMAX_API_KEY and MINIMAX_GROUP_ID must be set. "
                 "Set them as environment variables or pass api_key/group_id to constructor."
@@ -63,6 +64,7 @@ class EmbeddingGenerator:
         payload = {
             "model": self.model_name,
             "texts": texts,
+            "type": embedding_type,
         }
         response = self.http_client.post(
             f"{self.base_url}/embeddings",
@@ -92,8 +94,8 @@ class EmbeddingGenerator:
         return all_embeddings
 
     def encode_query(self, query: str) -> List[float]:
-        """Encode a single query string into an embedding vector."""
-        return self._call_api([query])[0]
+        """Encode a single query string into an embedding vector (type=query for retrieval)."""
+        return self._call_api([query], embedding_type="query")[0]
 
     def similarity(self, query_vec: List[float], doc_vecs: List[List[float]]) -> List[float]:
         """Compute cosine similarity between query vector and document vectors."""
