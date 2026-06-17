@@ -337,38 +337,46 @@ class LegalClassifier:
         self,
         permissions: Dict[str, PermissionAnalysis]
     ) -> Tuple[WebsiteCategory, str]:
-        bucket_scores = {
-            WebsiteCategory.BUCKET_1: {"allowed": 0, "forbidden": 0},
-            WebsiteCategory.BUCKET_2: {"allowed": 0, "forbidden": 0},
-            WebsiteCategory.BUCKET_3: {"allowed": 0, "forbidden": 0},
-            WebsiteCategory.BUCKET_4: {"allowed": 0, "forbidden": 0},
-        }
-        for param in ["scraping", "storing", "free_display", "free_redistribute"]:
-            self._score_param(permissions, param, bucket_scores[WebsiteCategory.BUCKET_1])
-        for param in ["scraping", "storing", "free_display"]:
-            self._score_param(permissions, param, bucket_scores[WebsiteCategory.BUCKET_2])
-        for param in ["scraping", "storing"]:
-            self._score_param(permissions, param, bucket_scores[WebsiteCategory.BUCKET_3])
-        self._score_param(permissions, "manual_collection", bucket_scores[WebsiteCategory.BUCKET_4])
+        """
+        Determine bucket by profile matching: for each bucket, count how many
+        of its expected-permitted params are ALLOWED and how many of its
+        expected-prohibited params are NOT_ALLOWED. Score = matches - mismatches.
+        The bucket with the highest score is the best fit.
+        """
         best_bucket = WebsiteCategory.BUCKET_4
-        best_score = 0
-        for bucket, scores in bucket_scores.items():
-            total_score = scores["allowed"] - scores["forbidden"]
-            if total_score > best_score:
-                best_score = total_score
+        best_score = -999
+
+        for bucket, definition in CATEGORY_DEFINITIONS.items():
+            score = 0
+            for param_name, category_field in PARAM_TO_CATEGORY_FIELD.items():
+                expected_allowed = getattr(definition, category_field)
+                actual = permissions.get(param_name)
+                if actual is None:
+                    continue
+                actual_is_allowed = actual.permission == PermissionLevel.ALLOWED
+
+                if expected_allowed:
+                    # Bucket expects this param to be allowed
+                    if actual_is_allowed:
+                        score += 1  # matches expectation
+                    elif actual.permission == PermissionLevel.NOT_ALLOWED:
+                        score -= 1  # violates expectation
+                    # uncertain: no score change
+                else:
+                    # Bucket expects this param to be NOT allowed
+                    if actual.permission == PermissionLevel.NOT_ALLOWED:
+                        score += 1  # matches expectation
+                    elif actual_is_allowed:
+                        score -= 1  # violates expectation (allowed when bucket expects not)
+                    # uncertain: no score change
+
+            if score > best_score:
+                best_score = score
                 best_bucket = bucket
+
         definitions = CATEGORY_DEFINITIONS[best_bucket]
         reasoning = f"Website matches {definitions.name} profile with score {best_score}"
         return best_bucket, reasoning
-
-    def _score_param(self, permissions, param_name, bucket_score):
-        if param_name not in permissions:
-            return
-        perm = permissions[param_name]
-        if perm.permission == PermissionLevel.ALLOWED:
-            bucket_score["allowed"] += 1
-        elif perm.permission == PermissionLevel.NOT_ALLOWED:
-            bucket_score["forbidden"] += 1
 
     def _extract_unique_findings(
         self,

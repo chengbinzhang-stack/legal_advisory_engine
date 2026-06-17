@@ -89,7 +89,11 @@ class LegalDataEngine:
 
     def _extract_domain(self, url: str) -> str:
         parsed = urlparse(url)
-        return parsed.netloc
+        domain = parsed.netloc
+        # Strip leading www. to normalize: www.example.com → example.com
+        if domain.startswith("www."):
+            domain = domain[4:]
+        return domain
 
     def _save_analysis(self, analysis: LegalAnalysis):
         summary_path = os.path.join(
