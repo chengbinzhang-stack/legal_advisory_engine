@@ -106,7 +106,8 @@ class LegalDataEngine:
                 k: {
                     "level": v.permission.value,
                     "confidence": v.confidence_score,
-                    "reasoning": v.reasoning
+                    "reasoning": v.reasoning,
+                    "relevant_excerpts": v.relevant_excerpts
                 } for k, v in analysis.permissions.items()
             },
             "unique_findings": analysis.unique_findings,
@@ -136,6 +137,7 @@ class LegalDataEngine:
                 parameter_name=k,
                 permission=PermissionLevel(v["level"]),
                 reasoning=v.get("reasoning", ""),
+                relevant_excerpts=v.get("relevant_excerpts", []),
                 confidence_score=v.get("confidence", 0.0)
             )
         return LegalAnalysis(

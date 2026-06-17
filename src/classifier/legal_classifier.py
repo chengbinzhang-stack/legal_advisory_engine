@@ -59,13 +59,13 @@ Also extract:
 
 Output ONLY a valid JSON object with this exact structure (no markdown, no explanation):
 {
-  "scraping": {"permission": "allowed|not_allowed|uncertain", "reasoning": "...", "reference_urls": []},
-  "manual_collection": {"permission": "...", "reasoning": "...", "reference_urls": []},
-  "storing": {"permission": "...", "reasoning": "...", "reference_urls": []},
-  "free_display": {"permission": "...", "reasoning": "...", "reference_urls": []},
-  "subscription_display": {"permission": "...", "reasoning": "...", "reference_urls": []},
-  "free_redistribute": {"permission": "...", "reasoning": "...", "reference_urls": []},
-  "subscription_redistribute": {"permission": "...", "reasoning": "...", "reference_urls": []},
+  "scraping": {"permission": "allowed|not_allowed|uncertain", "reasoning": "...", "reference_urls": [], "relevant_excerpts": ["exact text snippet from document that supports this decision"]},
+  "manual_collection": {"permission": "...", "reasoning": "...", "reference_urls": [], "relevant_excerpts": []},
+  "storing": {"permission": "...", "reasoning": "...", "reference_urls": [], "relevant_excerpts": []},
+  "free_display": {"permission": "...", "reasoning": "...", "reference_urls": [], "relevant_excerpts": []},
+  "subscription_display": {"permission": "...", "reasoning": "...", "reference_urls": [], "relevant_excerpts": []},
+  "free_redistribute": {"permission": "...", "reasoning": "...", "reference_urls": [], "relevant_excerpts": []},
+  "subscription_redistribute": {"permission": "...", "reasoning": "...", "reference_urls": [], "relevant_excerpts": []},
   "reference_urls": ["https://..."],
   "unique_findings": ["Found indicators of ...", ...]
 }
@@ -144,6 +144,7 @@ class LegalClassifier:
                     parameter_name=param,
                     permission=PermissionLevel(perm_level),
                     reasoning=param_data.get("reasoning", "No reasoning provided") + refs_text,
+                    relevant_excerpts=param_data.get("relevant_excerpts", []),
                     confidence_score=0.95 if perm_level != "uncertain" else 0.5
                 )
                 permissions[param] = permission

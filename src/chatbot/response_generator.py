@@ -4,6 +4,7 @@ import json
 from typing import Dict, Any, Optional, List
 from src.chatbot.prompt_builder import PromptBuilder
 from src.rag.query_engine import QueryEngine
+from config import EngineConfig
 
 try:
     import httpx
@@ -42,17 +43,30 @@ class MiniMaxClient:
 
 
 class ResponseGenerator:
-    """Generates responses for the legal advisory chatbot."""
+    """
+    Generates responses for the legal advisory chatbot.
+    Uses stored LegalAnalysis (from summary JSON) for permission/bucket questions,
+    so results are consistent with the website analysis page.
+    Falls back to RAG for general questions about legal concepts.
+    """
+
+    PERMISSION_PARAMS = [
+        "scraping", "manual_collection", "storing",
+        "free_display", "subscription_display",
+        "free_redistribute", "subscription_redistribute"
+    ]
 
     def __init__(
         self,
         query_engine: QueryEngine,
         prompt_builder: PromptBuilder,
-        llm_client: Any = None
+        llm_client: Any = None,
+        summaries_directory: str = "./data/summaries"
     ):
         self.query_engine = query_engine
         self.prompt_builder = prompt_builder
         self.llm_client = llm_client
+        self.summaries_directory = summaries_directory
 
     def generate_response(
         self,
@@ -60,6 +74,104 @@ class ResponseGenerator:
         website_domain: str,
         conversation_history: Optional[List[Dict[str, str]]] = None
     ) -> Dict[str, Any]:
+        # Load stored analysis for this website
+        analysis = self._load_stored_analysis(website_domain)
+
+        # Check if query is about a specific permission or bucket category
+        query_lower = query.lower()
+        param_key = self._match_permission_param(query_lower)
+        is_bucket_question = "bucket" in query_lower or "category" in query_lower
+
+        if analysis and (param_key or is_bucket_question):
+            # Use stored analysis — consistent with website analysis page
+            return self._build_stored_response(query, website_domain, analysis, param_key, is_bucket_question)
+        else:
+            # General question — use RAG as before
+            return self._generate_rag_response(query, website_domain, conversation_history)
+
+    def _load_stored_analysis(self, website_domain: str) -> Optional[Dict]:
+        """Load stored LegalAnalysis from summary JSON file."""
+        summary_path = os.path.join(
+            self.summaries_directory,
+            f"summary_{website_domain.replace('.', '_')}.json"
+        )
+        if os.path.exists(summary_path):
+            with open(summary_path, "r") as f:
+                return json.load(f)
+        return None
+
+    def _match_permission_param(self, query_lower: str) -> Optional[str]:
+        """Check if query mentions a specific permission parameter."""
+        for param in self.PERMISSION_PARAMS:
+            if param.replace("_", " ") in query_lower or param.replace("_", "") in query_lower:
+                return param
+        return None
+
+    def _build_stored_response(
+        self,
+        query: str,
+        website_domain: str,
+        analysis: Dict,
+        param_key: Optional[str],
+        is_bucket_question: bool
+    ) -> Dict[str, Any]:
+        """Build response from stored analysis with source snippets."""
+        parts = []
+
+        if is_bucket_question:
+            bucket_num = analysis.get("category", 4)
+            bucket_names = {
+                1: "Full Access (scrape, store, display, redistribute allowed)",
+                2: "Display Only (scrape, store, display allowed; no redistribute)",
+                3: "Storage Only (scrape, store allowed; no display, no redistribute)",
+                4: "Manual Collection Only (no scrape, no store, no display, no redistribute)"
+            }
+            parts.append(f"**Bucket {bucket_num}: {bucket_names.get(bucket_num, 'Unknown')}**")
+            parts.append("")
+            parts.append(f"This classification was determined based on the full legal document analysis for {website_domain}.")
+            # Show which permissions drive this bucket
+            perms = analysis.get("permissions", {})
+            allowed = [k for k, v in perms.items() if v.get("level") == "allowed"]
+            not_allowed = [k for k, v in perms.items() if v.get("level") == "not_allowed"]
+            if allowed:
+                parts.append(f"**Allowed:** {', '.join(allowed)}")
+            if not_allowed:
+                parts.append(f"**Not Allowed:** {', '.join(not_allowed)}")
+
+        if param_key:
+            perms = analysis.get("permissions", {})
+            if param_key in perms:
+                p = perms[param_key]
+                level = p.get("level", "uncertain")
+                reasoning = p.get("reasoning", "No reasoning available")
+                excerpts = p.get("relevant_excerpts", [])
+
+                parts.append(f"**{param_key.replace('_', ' ').title()}:** {level.replace('_', ' ').upper()}")
+                parts.append("")
+                parts.append(f"**Reasoning:** {reasoning}")
+
+                if excerpts:
+                    parts.append("")
+                    parts.append("**Relevant excerpts from the legal document:**")
+                    for i, ex in enumerate(excerpts, 1):
+                        parts.append(f"  {i}. \"{ex}\"")
+
+        response_text = "\n".join(parts)
+        return {
+            "response": response_text,
+            "sources": [],
+            "query": query,
+            "website_domain": website_domain,
+            "context_used": "Stored LegalAnalysis (consistent with website analysis page)"
+        }
+
+    def _generate_rag_response(
+        self,
+        query: str,
+        website_domain: str,
+        conversation_history: Optional[List[Dict[str, str]]] = None
+    ) -> Dict[str, Any]:
+        """Fall back to RAG for general legal concept questions."""
         rag_results = self.query_engine.query(
             query_text=query,
             website_domain=website_domain,

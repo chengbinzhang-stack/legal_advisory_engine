@@ -52,7 +52,8 @@ def get_response_generator():
         st.session_state.response_generator = ResponseGenerator(
             query_engine=query_engine,
             prompt_builder=prompt_builder,
-            llm_client=llm_client
+            llm_client=llm_client,
+            summaries_directory=st.session_state.legal_engine.config.summaries_directory
         )
     return st.session_state.response_generator
 
