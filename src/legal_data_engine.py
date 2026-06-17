@@ -75,8 +75,14 @@ class LegalDataEngine:
         return analysis
 
     def _scrape_website(self, url: str) -> WebsiteData:
-        terms_scraper = TermsScraper(timeout=self.config.timeout)
-        privacy_scraper = PrivacyScraper(timeout=self.config.timeout)
+        terms_scraper = TermsScraper(
+            timeout=self.config.timeout,
+            browserless_api_key=self.config.browserless_api_key
+        )
+        privacy_scraper = PrivacyScraper(
+            timeout=self.config.timeout,
+            browserless_api_key=self.config.browserless_api_key
+        )
         robots_scraper = RobotsScraper(timeout=self.config.timeout)
         domain = self._extract_domain(url)
         website_data = WebsiteData(url=url, domain=domain)

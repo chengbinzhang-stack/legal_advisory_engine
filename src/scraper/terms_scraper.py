@@ -3,7 +3,7 @@ from typing import List, Optional
 import httpx
 from bs4 import BeautifulSoup
 from src.models.website_data import ScrapedDocument
-from src.scraper.base_scraper import BaseScraper
+from src.scraper.base_scraper import BaseScraper, is_spa_shell
 from src.scraper.site_explorer import SiteExplorer
 from datetime import datetime
 
@@ -108,7 +108,10 @@ class TermsScraper(BaseScraper):
                 return result
 
         # 6. Site exploration - crawl the site to discover legal pages
-        explorer = SiteExplorer(max_depth=2, max_links=30, timeout=self.timeout, user_agent=self.user_agent)
+        explorer = SiteExplorer(
+            max_depth=2, max_links=30, timeout=self.timeout,
+            user_agent=self.user_agent, browserless_api_key=self.browserless_api_key
+        )
         discovery = explorer.discover_legal_pages(base_url)
         for terms_url in discovery.get("terms_of_use", [])[:10]:
             result = self._try_scrape(terms_url)
@@ -135,22 +138,11 @@ class TermsScraper(BaseScraper):
                 return None
             soup = BeautifulSoup(response.text, "html.parser")
             locs = soup.find_all("loc")
-            # Strict URL pattern matching - only accept terms-like URLs
-            strict_patterns = [
-                "terms-of-use", "terms-of-service", "terms_and_conditions",
-                "terms-and-conditions", "terms_conditions", "conditions",
-                "user-agreement", "legal-notice", "legal-notice",
-                "acceptable-use", "use-policy", "site-terms",
+            # Find URLs containing any legal-related keywords
+            terms_locs = [
+                loc.get_text().strip() for loc in locs
+                if any(kw in loc.get_text().lower() for kw in keywords)
             ]
-            terms_locs = []
-            for loc in locs:
-                loc_url = loc.get_text().strip().lower()
-                if any(pat in loc_url for pat in strict_patterns):
-                    terms_locs.append(loc.get_text().strip())
-            # Fall back to keyword match if no strict patterns found
-            if not terms_locs:
-                terms_locs = [loc.get_text().strip() for loc in locs
-                              if any(kw in loc.get_text().lower() for kw in keywords)]
             for terms_url in terms_locs[:10]:
                 result = self._try_scrape(terms_url)
                 if result.success and len(result.raw_content) >= self.MIN_CONTENT_LENGTH:
@@ -172,16 +164,8 @@ class TermsScraper(BaseScraper):
                 if not href.startswith("http"):
                     href = base_url.rstrip("/") + ("/" if not href.startswith("/") else "") + href
                 href_lower = href.lower()
-                # Strict URL pattern matching
-                strict_patterns = [
-                    "terms-of-use", "terms-of-service", "terms_and_conditions",
-                    "terms-and-conditions", "terms_conditions", "conditions",
-                    "user-agreement", "legal-notice", "acceptable-use",
-                    "use-policy", "site-terms", "legal/terms",
-                ]
-                matched = any(pat in href_lower for pat in strict_patterns)
-                if not matched:
-                    matched = any(kw in href_lower for kw in keywords) and any(kw in href_lower for kw in ["terms", "conditions", "agreement"])
+                # Check URL for any legal-related keywords
+                matched = any(kw in href_lower for kw in keywords)
                 if matched and href not in links:
                     links.append(href)
         except Exception:
@@ -189,20 +173,58 @@ class TermsScraper(BaseScraper):
         return links
 
     def _try_scrape(self, url: str) -> ScrapedDocument:
+        """Try httpx first, fallback to Browserless if SPA detected."""
         try:
             response = httpx.get(url, headers=self._build_headers(), timeout=self.timeout, follow_redirects=True)
-            if response.status_code == 200:
-                content = self._extract_text(response.text)
-                return ScrapedDocument(document_type="terms_of_use", url=str(response.url),
-                    raw_content=content, scraped_at=datetime.now(), success=True)
-            return ScrapedDocument(document_type="terms_of_use", url=url, raw_content="",
-                scraped_at=datetime.now(), success=False, error_message=f"HTTP {response.status_code}")
-        except Exception as e:
-            return ScrapedDocument(document_type="terms_of_use", url=url, raw_content="",
-                scraped_at=datetime.now(), success=False, error_message=str(e))
+            if response.status_code != 200:
+                return ScrapedDocument(
+                    document_type="terms_of_use", url=url, raw_content="",
+                    scraped_at=datetime.now(), success=False,
+                    error_message=f"HTTP {response.status_code}"
+                )
 
-    def _extract_text(self, html_content: str) -> str:
-        soup = BeautifulSoup(html_content, "html.parser")
+            html_content = response.text
+
+            # Check if it's an SPA shell - if so, try Browserless
+            if is_spa_shell(html_content) and self.browserless_api_key:
+                browserless_content, status = self._fetch_with_browserless(url)
+                if status == 200 and len(browserless_content) > 500:
+                    soup = BeautifulSoup(browserless_content, "html.parser")
+                    text = self._extract_text(soup)
+                    return ScrapedDocument(
+                        document_type="terms_of_use", url=url,
+                        raw_content=text, scraped_at=datetime.now(), success=True
+                    )
+
+            # Normal httpx path
+            text = self._extract_text(html_content)
+            return ScrapedDocument(
+                document_type="terms_of_use", url=str(response.url),
+                raw_content=text, scraped_at=datetime.now(), success=True
+            )
+
+        except Exception as e:
+            # If httpx failed and we have Browserless, try it
+            if self.browserless_api_key:
+                browserless_content, status = self._fetch_with_browserless(url)
+                if status == 200:
+                    soup = BeautifulSoup(browserless_content, "html.parser")
+                    text = self._extract_text(soup)
+                    return ScrapedDocument(
+                        document_type="terms_of_use", url=url,
+                        raw_content=text, scraped_at=datetime.now(), success=True
+                    )
+            return ScrapedDocument(
+                document_type="terms_of_use", url=url, raw_content="",
+                scraped_at=datetime.now(), success=False, error_message=str(e)
+            )
+
+    def _extract_text(self, html_content) -> str:
+        """Extract text from HTML string or BeautifulSoup object."""
+        if isinstance(html_content, BeautifulSoup):
+            soup = html_content
+        else:
+            soup = BeautifulSoup(html_content, "html.parser")
         for element in soup(["script", "style", "nav", "footer", "header", "aside", "form"]):
             element.decompose()
         return soup.get_text(separator="\n", strip=True)
@@ -228,10 +250,6 @@ class TermsScraper(BaseScraper):
         url_lower = url.lower()
 
         # Common plural/singular swaps: dataset/datasets, term/terms, etc.
-        import re
-        # Try adding/removing 's' at the end of meaningful path segments
-        # e.g. .../terms-of-use-for-dataset -> .../terms-of-use-for-datasets
-        # e.g. .../terms-of-use-for-datasets -> .../terms-of-use-for-dataset
         for singular, plural in [
             ("dataset", "datasets"),
             ("term", "terms"),
@@ -251,5 +269,4 @@ class TermsScraper(BaseScraper):
         if url_lower.endswith("/"):
             variations.append(url.rstrip("/"))
 
-        # Try with/without trailing slash variations already covered above
         return variations

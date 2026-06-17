@@ -3,7 +3,7 @@ from typing import List, Optional, Dict, Set
 from urllib.parse import urljoin, urlparse
 import httpx
 from bs4 import BeautifulSoup
-from src.scraper.base_scraper import BaseScraper
+from src.scraper.base_scraper import BaseScraper, is_spa_shell
 
 
 class SiteExplorer(BaseScraper):
@@ -140,7 +140,7 @@ class SiteExplorer(BaseScraper):
                                          "terms-and-conditions", "conditions",
                                          "user-agreement", "acceptable-use",
                                          "use-policy", "site-terms", "legal/terms",
-                                         "summary-terms"]):
+                                         "summary-terms", "/terms"]):
             return "terms_of_use"
 
         if any(k in url_lower for k in ["privacy", "privacy-policy", "privacy-notice"]):
@@ -234,39 +234,59 @@ class SiteExplorer(BaseScraper):
         )
 
     def _try_scrape(self, url: str) -> "ScrapedDocument":
-        """Try to scrape a single URL."""
+        """Try httpx first, fallback to Browserless if SPA detected."""
         from src.models.website_data import ScrapedDocument
         from datetime import datetime
 
         try:
             response = httpx.get(url, headers=self._build_headers(),
                                 timeout=self.timeout, follow_redirects=True)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, "html.parser")
-                for elem in soup(["script", "style", "nav", "footer", "header", "aside", "form"]):
-                    elem.decompose()
-                content = soup.get_text(separator="\n", strip=True)
+            if response.status_code != 200:
                 return ScrapedDocument(
-                    document_type="terms_of_use",
-                    url=str(response.url),
-                    raw_content=content,
-                    scraped_at=datetime.now(),
-                    success=True
+                    document_type="terms_of_use", url=url, raw_content="",
+                    scraped_at=datetime.now(), success=False,
+                    error_message=f"HTTP {response.status_code}"
                 )
+
+            html_content = response.text
+
+            # Check if it's an SPA shell - if so, try Browserless
+            if is_spa_shell(html_content) and self.browserless_api_key:
+                browserless_content, status = self._fetch_with_browserless(url)
+                if status == 200 and len(browserless_content) > 500:
+                    soup = BeautifulSoup(browserless_content, "html.parser")
+                    for elem in soup(["script", "style", "nav", "footer", "header", "aside", "form"]):
+                        elem.decompose()
+                    content = soup.get_text(separator="\n", strip=True)
+                    return ScrapedDocument(
+                        document_type="terms_of_use", url=url,
+                        raw_content=content, scraped_at=datetime.now(), success=True
+                    )
+
+            # Normal httpx path
+            soup = BeautifulSoup(html_content, "html.parser")
+            for elem in soup(["script", "style", "nav", "footer", "header", "aside", "form"]):
+                elem.decompose()
+            content = soup.get_text(separator="\n", strip=True)
             return ScrapedDocument(
-                document_type="terms_of_use",
-                url=url,
-                raw_content="",
-                scraped_at=datetime.now(),
-                success=False,
-                error_message=f"HTTP {response.status_code}"
+                document_type="terms_of_use", url=str(response.url),
+                raw_content=content, scraped_at=datetime.now(), success=True
             )
+
         except Exception as e:
+            # If httpx failed and we have Browserless, try it
+            if self.browserless_api_key:
+                browserless_content, status = self._fetch_with_browserless(url)
+                if status == 200:
+                    soup = BeautifulSoup(browserless_content, "html.parser")
+                    for elem in soup(["script", "style", "nav", "footer", "header", "aside", "form"]):
+                        elem.decompose()
+                    content = soup.get_text(separator="\n", strip=True)
+                    return ScrapedDocument(
+                        document_type="terms_of_use", url=url,
+                        raw_content=content, scraped_at=datetime.now(), success=True
+                    )
             return ScrapedDocument(
-                document_type="terms_of_use",
-                url=url,
-                raw_content="",
-                scraped_at=datetime.now(),
-                success=False,
-                error_message=str(e)
+                document_type="terms_of_use", url=url, raw_content="",
+                scraped_at=datetime.now(), success=False, error_message=str(e)
             )

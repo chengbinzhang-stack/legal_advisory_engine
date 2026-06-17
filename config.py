@@ -16,6 +16,7 @@ class EngineConfig:
     user_agent: str = "LegalAdvisoryBot/1.0 (+https://example.com/bot)"
     respect_robots_txt: bool = True
     javascript_rendering: bool = False
+    browserless_api_key: Optional[str] = "2Uinlj21klsSOP800e349e70b75773bc1e823edb93c0a4203"
 
     embedding_model: str = "embo-01"
     embedding_batch_size: int = 32
@@ -59,5 +60,7 @@ class EngineConfig:
             self.embedding_device = device
         if group_id := os.environ.get("MINIMAX_GROUP_ID"):
             self.minimax_group_id = group_id
+        if api_key := os.environ.get("BROWSERLESS_API_KEY"):
+            self.browserless_api_key = api_key
         os.makedirs(self.chroma_persist_directory, exist_ok=True)
         os.makedirs(self.summaries_directory, exist_ok=True)
