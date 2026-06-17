@@ -76,10 +76,11 @@ Key rules:
 - Check robots.txt references if present
 - Check API/developer terms links mentioned in the document
 - Check for "all rights reserved", "non-commercial", "attribution required", "DMCA" mentions
-- If multiple contradictory statements exist, use the more restrictive interpretation
+- If multiple contradictory statements exist, report "uncertain" and list both the allowing and restricting excerpts — do NOT automatically prefer the more restrictive interpretation. Be neutral: report what the document actually says.
 - "reference_urls" should list all relevant URLs found in the legal text itself (terms pages, API docs, privacy policy links, etc.)
 - Extract URLs from the text that are explicitly referenced (do not invent URLs)
 - IMPORTANT: All reasoning and excerpts must be grounded ONLY in the provided legal documents. Do not make inferences beyond what is stated.
+- IMPORTANT: Be strictly neutral and objective. Do NOT bias toward allowing or restricting. Report the document's actual position accurately, even if it is permissive. Do not add your own caution or safety interpretation.
 """
 
 
