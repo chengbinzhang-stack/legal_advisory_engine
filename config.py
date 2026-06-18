@@ -44,6 +44,10 @@ class EngineConfig:
     data_directory: str = "./data"
     summaries_directory: str = "./data/summaries"
 
+    # Cache duration for scraped website data (in hours)
+    # Set to 0 to disable cache, or a positive number for cache validity
+    cache_duration_hours: int = 24
+
     example_websites: list = field(default_factory=lambda: [
         "https://fada.in/",
         "https://vahan.parivahan.gov.in/vahan4dashboard/",

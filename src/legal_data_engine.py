@@ -51,6 +51,13 @@ class LegalDataEngine:
 
     def process_website(self, url: str) -> LegalAnalysis:
         domain = self._extract_domain(url)
+
+        # Check cache first - return cached result if valid and not expired
+        cached = self._get_cached_analysis(domain)
+        if cached:
+            return cached
+
+        # No cache or expired - scrape the website
         scraped_data = self._scrape_website(url)
         combined_text = self._combine_documents(scraped_data)
         robots_txt = ''
@@ -74,6 +81,37 @@ class LegalDataEngine:
         self._save_analysis(analysis)
         self._analysis_cache[domain] = analysis
         return analysis
+
+    def _get_cached_analysis(self, domain: str) -> Optional[LegalAnalysis]:
+        """Get cached analysis if it exists and is not expired."""
+        if self.config.cache_duration_hours <= 0:
+            return None  # Cache disabled
+
+        # Check in-memory cache first
+        if domain in self._analysis_cache:
+            return self._analysis_cache[domain]
+
+        # Check summary file
+        summary_path = os.path.join(
+            self.config.summaries_directory,
+            f"summary_{domain.replace('.', '_')}.json"
+        )
+        if not os.path.exists(summary_path):
+            return None
+
+        try:
+            with open(summary_path, "r") as f:
+                data = json.load(f)
+
+            # Check if within cache duration
+            processed_at = datetime.fromisoformat(data["processed_at"])
+            age_hours = (datetime.now() - processed_at).total_seconds() / 3600
+            if age_hours > self.config.cache_duration_hours:
+                return None  # Cache expired
+
+            return self._load_analysis_from_json(data)
+        except Exception:
+            return None
 
     def _scrape_website(self, url: str) -> WebsiteData:
         # Create a shared Browserless session for all scrapers (saves API units)
