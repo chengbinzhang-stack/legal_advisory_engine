@@ -40,6 +40,9 @@ class BrowserlessSessionManager:
 
         Returns (content, status_code).
         """
+        import time
+        print(f"[Browserless] Starting fetch: {url}", flush=True)
+        start = time.time()
         try:
             response = httpx.post(
                 f"{self.BASE_URL}/content?token={self.api_key}",
@@ -52,10 +55,14 @@ class BrowserlessSessionManager:
                 headers={"Content-Type": "application/json"},
                 timeout=60
             )
+            elapsed = time.time() - start
+            print(f"[Browserless] Done fetch: {url} status={response.status_code} elapsed={elapsed:.1f}s", flush=True)
             if response.status_code == 200:
                 return response.text, 200
             return "", response.status_code
-        except Exception:
+        except Exception as e:
+            elapsed = time.time() - start
+            print(f"[Browserless] Error fetch: {url} elapsed={elapsed:.1f}s error={e}", flush=True)
             return "", 503
 
     def close(self):

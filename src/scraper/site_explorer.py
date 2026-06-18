@@ -66,11 +66,15 @@ class SiteExplorer(BaseScraper):
 
     def _crawl(self, url: str, depth: int, results: Dict[str, List[str]]) -> None:
         """Recursively crawl URL to find legal pages."""
+        print(f"[SiteExplorer] Crawling depth={depth}: {url}", flush=True)
+
         if depth > self.max_depth:
+            print(f"[SiteExplorer] Skipping - max depth reached: {url}", flush=True)
             return
 
         normalized = self._normalize_url(url)
         if normalized in self._visited:
+            print(f"[SiteExplorer] Skipping - already visited: {url}", flush=True)
             return
         self._visited.add(normalized)
 
@@ -79,19 +83,24 @@ class SiteExplorer(BaseScraper):
             final_url = url
 
             # Try httpx first
+            print(f"[SiteExplorer] httpx GET: {url}", flush=True)
             response = httpx.get(url, headers=self._build_headers(),
                                 timeout=self.timeout, follow_redirects=True)
+            print(f"[SiteExplorer] httpx response: {response.status_code} for {url}", flush=True)
             if response.status_code == 200:
                 html_content = response.text
                 final_url = str(response.url)
 
             # If SPA detected and Browserless available, use it
             if is_spa_shell(html_content) and self.browserless_session:
+                print(f"[SiteExplorer] SPA shell detected, using Browserless: {url}", flush=True)
                 browserless_content, status = self._fetch_with_browserless(url)
+                print(f"[SiteExplorer] Browserless response: {status} for {url}", flush=True)
                 if status == 200:
                     html_content = browserless_content
 
             if not html_content:
+                print(f"[SiteExplorer] No content for: {url}", flush=True)
                 return
 
             soup = BeautifulSoup(html_content, "html.parser")
@@ -99,16 +108,18 @@ class SiteExplorer(BaseScraper):
             # Classify current page
             page_category = self._classify_url(final_url)
             if page_category:
+                print(f"[SiteExplorer] Found legal page [{page_category}]: {final_url}", flush=True)
                 results[page_category].append(final_url)
 
             # Extract and follow legal-relevant links
             if depth < self.max_depth:
                 links = self._find_legal_links(soup, final_url)
+                print(f"[SiteExplorer] Found {len(links)} legal links at depth={depth}: {url}", flush=True)
                 for link in links[:self.max_links]:
                     self._crawl(link, depth + 1, results)
 
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[SiteExplorer] Error crawling {url}: {e}", flush=True)
 
     def _find_legal_links(self, soup: BeautifulSoup, base_url: str) -> List[str]:
         """

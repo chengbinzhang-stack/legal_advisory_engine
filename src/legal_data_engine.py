@@ -65,11 +65,33 @@ class LegalDataEngine:
             if doc.document_type == 'robots_txt' and doc.success:
                 robots_txt = doc.raw_content
                 break
+
         # Build document_type -> url mapping for proper citation
         document_urls = {
             doc.document_type: doc.url
             for doc in scraped_data.documents if doc.success
         }
+
+        # If terms and privacy both failed, skip LLM - insufficient data
+        terms_ok = any(d.document_type == 'terms_of_use' and d.success for d in scraped_data.documents)
+        privacy_ok = any(d.document_type == 'privacy_policy' and d.success for d in scraped_data.documents)
+
+        if not terms_ok and not privacy_ok:
+            # Cannot analyze - return failed result
+            from src.models.legal_analysis import LegalAnalysis, PermissionAnalysis, PermissionLevel, WebsiteCategory
+            error_analysis = LegalAnalysis(
+                website_url=url,
+                website_domain=domain,
+                category=WebsiteCategory.UNKNOWN,
+                category_reasoning="Failed to scrape terms and privacy pages - insufficient data for analysis",
+                permissions={},
+                unique_findings=[],
+                summary_text=f"Analysis failed: could not retrieve terms_of_use or privacy_policy pages. Terms scraper status: {[d.success for d in scraped_data.documents if d.document_type in ['terms_of_use','privacy_policy']]}"
+            )
+            self._save_analysis(error_analysis)
+            self._analysis_cache[domain] = error_analysis
+            return error_analysis
+
         analysis = self.classifier.classify_permissions(
             text=combined_text,
             website_url=url,
@@ -135,9 +157,17 @@ class LegalDataEngine:
         website_data = WebsiteData(url=url, domain=domain)
 
         try:
+            print(f"[LegalDataEngine] Starting terms_scraper.scrape: {url}", flush=True)
             website_data.documents.append(terms_scraper.scrape(url))
+            print(f"[LegalDataEngine] Done terms_scraper.scrape", flush=True)
+
+            print(f"[LegalDataEngine] Starting privacy_scraper.scrape: {url}", flush=True)
             website_data.documents.append(privacy_scraper.scrape(url))
+            print(f"[LegalDataEngine] Done privacy_scraper.scrape", flush=True)
+
+            print(f"[LegalDataEngine] Starting robots_scraper.scrape: {url}", flush=True)
             website_data.documents.append(robots_scraper.scrape(url))
+            print(f"[LegalDataEngine] Done robots_scraper.scrape", flush=True)
         finally:
             # Always close the session when done
             if session_manager:

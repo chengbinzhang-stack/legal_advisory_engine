@@ -78,6 +78,9 @@ Key rules:
 - Check for "all rights reserved", "non-commercial", "attribution required", "DMCA" mentions
 - If multiple contradictory statements exist, report "uncertain" and list both the allowing and restricting excerpts — do NOT automatically prefer the more restrictive interpretation. Be neutral: report what the document actually says.
 - "reference_urls" should list all relevant URLs found in the legal text itself (terms pages, API docs, privacy policy links, etc.)
+- CRITICAL — Hallucination Prevention: If the scraped text is empty, very short (<200 chars), or contains no relevant legal content, you MUST set ALL permissions to "uncertain" with reasoning "Insufficient data from scraped documents" and leave relevant_excerpts as empty arrays. DO NOT fabricate evidence or guess permissions.
+- CRITICAL — Source URLs: Only use URLs that appear in the "Source document URLs" provided above. If a URL is listed in relevant_excerpts but was NOT in the provided source URLs, it is hallucinated — do not include it.
+- CRITICAL — Excerpt Requirement: Every non-empty relevant_excerpts array MUST contain a VERBATIM quote from the actual document text. Do not paraphrase, summarize, or quote from memory. If you cannot find exact supporting text, leave relevant_excerpts empty and set permission to "uncertain".
 - Extract URLs from the text that are explicitly referenced (do not invent URLs)
 - IMPORTANT: All reasoning and excerpts must be grounded ONLY in the provided legal documents. Do not make inferences beyond what is stated.
 - IMPORTANT: Be strictly neutral and objective. Do NOT bias toward allowing or restricting. Report the document's actual position accurately, even if it is permissive. Do not add your own caution or safety interpretation.
@@ -165,13 +168,17 @@ Legal document text:
                     elif isinstance(ex, str) and ex:
                         excerpt_list.append({"text": ex, "source": ""})
 
+                # If no excerpts but permission is not uncertain, force uncertain (hallucination guard)
+                if not excerpt_list and perm_level not in ("uncertain", "not_applicable"):
+                    perm_level = "uncertain"
+
                 permission = PermissionAnalysis(
                     parameter_name=param,
                     permission=PermissionLevel(perm_level),
-                    reasoning=param_data.get("reasoning", "No reasoning provided"),
+                    reasoning=param_data.get("reasoning", "No reasoning provided") if perm_level != "uncertain" else "Insufficient data - no relevant excerpts found in scraped documents. Unable to determine permission level.",
                     relevant_excerpts=excerpt_list,
                     source_documents=[],  # No longer used, kept for backward compat
-                    confidence_score=0.95 if perm_level != "uncertain" else 0.5
+                    confidence_score=0.3 if perm_level == "uncertain" else 0.95
                 )
                 permissions[param] = permission
 
@@ -240,6 +247,28 @@ Legal document text:
         """
         Fallback heuristic classifier when LLM is unavailable.
         """
+        # Guard: if text is too short, return uncertain
+        if not text or len(text) < 200:
+            permissions = {
+                param: PermissionAnalysis(
+                    parameter_name=param,
+                    permission=PermissionLevel.UNCERTAIN,
+                    reasoning="Insufficient data - scraped content too short",
+                    relevant_excerpts=[],
+                    confidence_score=0.3
+                )
+                for param in PERMISSION_PARAMS
+            }
+            return LegalAnalysis(
+                website_url=website_url,
+                website_domain=website_domain,
+                category=WebsiteCategory.UNKNOWN,
+                category_reasoning="Insufficient scraped data for heuristic analysis",
+                permissions=permissions,
+                unique_findings=[],
+                summary_text="Analysis unavailable - content too short"
+            )
+
         text_lower = text.lower()
 
         # Heuristic rules (simplified)

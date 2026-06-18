@@ -10,10 +10,11 @@ class PermissionLevel(Enum):
     NOT_APPLICABLE = "not_applicable"
 
 class WebsiteCategory(Enum):
-    BUCKET_1 = 1 # scrape, store, display, redistribute allowed
-    BUCKET_2 = 2  # scrape, store, display allowed, no redistribute
-    BUCKET_3 = 3  # scrape, store allowed, no display, no redistribute
-    BUCKET_4 = 4  # manually collect data only
+    UNKNOWN = 0           # Unable to determine - scraping failed or insufficient data
+    BUCKET_1 = 1          # scrape, store, display, redistribute allowed
+    BUCKET_2 = 2          # scrape, store, display allowed, no redistribute
+    BUCKET_3 = 3          # scrape, store allowed, no display, no redistribute
+    BUCKET_4 = 4          # manually collect data only
 
 @dataclass
 class PermissionAnalysis:
