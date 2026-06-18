@@ -75,13 +75,26 @@ class SiteExplorer(BaseScraper):
         self._visited.add(normalized)
 
         try:
+            html_content = ""
+            final_url = url
+
+            # Try httpx first
             response = httpx.get(url, headers=self._build_headers(),
                                 timeout=self.timeout, follow_redirects=True)
-            if response.status_code != 200:
+            if response.status_code == 200:
+                html_content = response.text
+                final_url = str(response.url)
+
+            # If SPA detected and Browserless available, use it
+            if is_spa_shell(html_content) and self.browserless_session:
+                browserless_content, status = self._fetch_with_browserless(url)
+                if status == 200:
+                    html_content = browserless_content
+
+            if not html_content:
                 return
 
-            soup = BeautifulSoup(response.text, "html.parser")
-            final_url = str(response.url)
+            soup = BeautifulSoup(html_content, "html.parser")
 
             # Classify current page
             page_category = self._classify_url(final_url)

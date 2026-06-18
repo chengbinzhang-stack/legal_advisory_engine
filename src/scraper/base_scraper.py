@@ -88,7 +88,12 @@ class BaseScraper(ABC):
         try:
             response = httpx.post(
                 f"https://chrome.browserless.io/content?token={self.browserless_api_key}",
-                json={"url": url},
+                json={
+                    "url": url,
+                    "gotoOptions": {
+                        "waitUntil": "networkidle2"
+                    }
+                },
                 headers={"Content-Type": "application/json"},
                 timeout=60
             )
