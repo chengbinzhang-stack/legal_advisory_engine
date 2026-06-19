@@ -193,6 +193,23 @@ class ResponseGenerator:
             website_domain=website_domain,
             n_results=5
         )
+
+        # Hallucination guard: refuse if no relevant results or context too short
+        MIN_CONTEXT_LENGTH = 100
+        if rag_results["total_results"] == 0 or len(rag_results["context"]) < MIN_CONTEXT_LENGTH:
+            return {
+                "response": (
+                    f"I don't have sufficient relevant information about '{website_domain}' in my knowledge base "
+                    f"to answer that question. Please try asking about specific permissions "
+                    f"(e.g., 'Can I scrape this website?') or 'What is the bucket category?' — "
+                    f"or re-analyze the website to populate the knowledge base first."
+                ),
+                "sources": [],
+                "query": query,
+                "website_domain": website_domain,
+                "context_used": ""
+            }
+
         messages = self.prompt_builder.build_query_prompt(
             query=query,
             context=rag_results["context"],

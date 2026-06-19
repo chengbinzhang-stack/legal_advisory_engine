@@ -18,7 +18,14 @@ IMPORTANT — Neutrality rule:
 - Report exactly what the legal documents state. Do NOT bias toward allowing or restricting.
 - If a document permits something, say so clearly. If it prohibits something, say so clearly. Do not add your own caution or safety filtering.
 - When answering permission questions, quote the relevant excerpt and name the source document.
-Be concise but thorough. Cite specific sections or excerpts when relevant."""
+Be concise but thorough. Cite specific sections or excerpts when relevant.
+
+IMPORTANT — Hallucination Prevention:
+- You MUST only answer based on the legal document context provided above.
+- If the context does not contain enough information to answer the question, you MUST say: "I don't have sufficient relevant information in the provided documents to answer this question."
+- Do NOT use general knowledge, common sense, or assumptions about what "most websites" allow or prohibit.
+- Do NOT guess or speculate. If in doubt, say you don't know.
+- Only quote text that appears verbatim in the provided context."""
 
     def build_query_prompt(
         self,

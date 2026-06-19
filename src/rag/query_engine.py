@@ -3,6 +3,11 @@ from typing import List, Dict, Any, Optional
 from src.embeddings.embedding_generator import EmbeddingGenerator
 from src.embeddings.chroma_client import ChromaClient
 
+# Maximum cosine distance for a result to be considered relevant
+# Cosine distance: 0 = identical, 1 = orthogonal, 2 = opposite
+# Results with distance > this threshold are filtered out
+MAX_SIMILARITY_DISTANCE = 1.0
+
 
 class QueryEngine:
     """RAG query engine for retrieving relevant legal information."""
@@ -52,14 +57,19 @@ class QueryEngine:
         self,
         raw_results: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
+        """Filter out results with low similarity (high distance)."""
         formatted = []
         if not raw_results.get("documents"):
             return formatted
         for i, doc in enumerate(raw_results["documents"][0]):
+            distance = raw_results["distances"][0][i] if raw_results.get("distances") else None
+            # Skip results with distance > threshold (too dissimilar)
+            if distance is not None and distance > MAX_SIMILARITY_DISTANCE:
+                continue
             formatted.append({
                 "text": doc,
                 "metadata": raw_results["metadatas"][0][i] if raw_results.get("metadatas") else {},
-                "distance": raw_results["distances"][0][i] if raw_results.get("distances") else None,
+                "distance": distance,
             })
         return formatted
 
