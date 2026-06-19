@@ -23,7 +23,10 @@ class LegalDataEngine:
         self.config = config or EngineConfig()
         self.classifier = LegalClassifier(
             api_key=self.config.minimax_api_key,
-            base_url=self.config.minimax_base_url
+            base_url=self.config.minimax_base_url,
+            provider=self.config.llm_provider,
+            gemini_api_key=self.config.gemini_api_key,
+            gemini_model=self.config.gemini_model
         )
         self.text_chunker = TextChunker(
             chunk_size=self.config.chunk_size,
