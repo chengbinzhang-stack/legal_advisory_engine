@@ -38,6 +38,12 @@ class EngineConfig:
     llm_model: str = "MiniMax-Text-01"
     llm_max_tokens: int = 2048
 
+    # LLM provider selection: "minimax" or "gemini"
+    llm_provider: str = "minimax"
+    # Gemini settings (free tier supports: gemini-2.5-flash, gemini-3-flash, gemini-3.1-flash-lite)
+    gemini_api_key: Optional[str] = None
+    gemini_model: str = "gemini-2.5-flash"
+
     max_workers: int = 4
     log_level: str = "INFO"
 
@@ -66,5 +72,7 @@ class EngineConfig:
             self.minimax_group_id = group_id
         if api_key := os.environ.get("BROWSERLESS_API_KEY"):
             self.browserless_api_key = api_key
+        if api_key := os.environ.get("GEMINI_API_KEY"):
+            self.gemini_api_key = api_key
         os.makedirs(self.chroma_persist_directory, exist_ok=True)
         os.makedirs(self.summaries_directory, exist_ok=True)

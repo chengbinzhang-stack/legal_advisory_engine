@@ -42,6 +42,66 @@ class MiniMaxClient:
         return result["choices"][0]["message"]["content"]
 
 
+class GeminiClient:
+    """Google Gemini API client (supports free-tier Flash models)."""
+
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
+        self.api_key = api_key
+        self.model = model
+        self.base_url = "https://generativelanguage.googleapis.com/v1beta"
+        self.http_client = httpx.Client(timeout=120.0)
+
+    def chat(self, messages: List[Dict[str, str]], model: str = None, max_tokens: int = 2048) -> str:
+        """Send chat request to Gemini API.
+
+        Args:
+            messages: List of message dicts with 'role' and 'content' keys.
+                      Gemini uses 'user' and 'model' roles only (no 'system' at top level).
+            model: Override model name (uses self.model if None).
+            max_tokens: Maximum output tokens.
+        """
+        model = model or self.model
+
+        # Gemini API format: separate systemInstruction from contents
+        system_instruction = None
+        contents = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            text = msg.get("content", "")
+            if role == "system":
+                system_instruction = text
+            elif role == "user":
+                contents.append({"role": "user", "parts": [{"text": text}]})
+            elif role == "assistant":
+                contents.append({"role": "model", "parts": [{"text": text}]})
+
+        url = (
+            f"{self.base_url}/models/{model}:generateContent"
+            f"?key={self.api_key}"
+        )
+        payload = {
+            "contents": contents,
+            "generationConfig": {
+                "maxOutputTokens": max_tokens,
+                "temperature": 0.7,
+            }
+        }
+        if system_instruction:
+            payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+
+        print(f"[DEBUG] Gemini request URL: {url}")
+        print(f"[DEBUG] Gemini request payload: {json.dumps(payload, indent=2)}")
+        response = self.http_client.post(url, json=payload)
+        response.raise_for_status()
+        result = response.json()
+
+        # Extract text from response
+        try:
+            return result["candidates"][0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError):
+            raise ValueError(f"Gemini API returned unexpected structure: {result}")
+
+
 class ResponseGenerator:
     """
     Generates responses for the legal advisory chatbot.
@@ -237,8 +297,9 @@ class ResponseGenerator:
 
     def _call_llm(self, messages: List[Dict[str, str]]) -> str:
         if self.llm_client is None:
-            return "LLM client not configured. Please set MINIMAX_API_KEY environment variable."
+            return "LLM client not configured. Please set MINIMAX_API_KEY or GEMINI_API_KEY environment variable."
         try:
+            # MiniMaxClient uses model kwarg, GeminiClient uses model kwarg too
             return self.llm_client.chat(messages)
         except Exception as e:
             return f"Error calling LLM: {str(e)}"

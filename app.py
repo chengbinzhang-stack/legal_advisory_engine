@@ -14,7 +14,7 @@ st.set_page_config(
 from config import EngineConfig
 from src.legal_data_engine import LegalDataEngine
 from src.models.legal_analysis import PermissionLevel
-from src.chatbot.response_generator import ResponseGenerator, MiniMaxClient
+from src.chatbot.response_generator import ResponseGenerator, MiniMaxClient, GeminiClient
 from src.chatbot.prompt_builder import PromptBuilder
 from src.rag.query_engine import QueryEngine
 
@@ -25,22 +25,40 @@ if "legal_engine" not in st.session_state:
 if "chat_sessions" not in st.session_state:
     st.session_state.chat_sessions = {}
 
+if "llm_provider" not in st.session_state:
+    st.session_state.llm_provider = "minimax"
+if "gemini_model" not in st.session_state:
+    st.session_state.gemini_model = "gemini-2.5-flash"
+
 def get_llm_client():
     """Get or create MiniMax LLM client."""
-    if "llm_client" not in st.session_state:
-        config = EngineConfig()
-        api_key = config.minimax_api_key or os.environ.get("MINIMAX_API_KEY")
-        if api_key:
-            st.session_state.llm_client = MiniMaxClient(
-                api_key=api_key,
-                base_url=config.minimax_base_url
-            )
-        else:
-            st.session_state.llm_client = None
-    return st.session_state.llm_client
+    config = EngineConfig()
+    api_key = config.minimax_api_key or os.environ.get("MINIMAX_API_KEY")
+    if api_key and (st.session_state.get("llm_client") is None):
+        st.session_state.llm_client = MiniMaxClient(api_key=api_key, base_url=config.minimax_base_url)
+    return st.session_state.get("llm_client")
+
+
+def get_gemini_client():
+    """Get or create Gemini LLM client."""
+    if "gemini_client" not in st.session_state:
+        st.session_state.gemini_client = None
+    config = EngineConfig()
+    api_key = config.gemini_api_key or os.environ.get("GEMINI_API_KEY")
+    model = st.session_state.get("gemini_model", config.gemini_model)
+    if api_key and (st.session_state.gemini_client is None or st.session_state.gemini_client.model != model):
+        st.session_state.gemini_client = GeminiClient(api_key=api_key, model=model)
+    return st.session_state.gemini_client
 
 def get_response_generator():
-    """Get or create response generator."""
+    """Get or create response generator with the currently selected LLM client."""
+    provider = st.session_state.get("llm_provider", "minimax")
+
+    if provider == "gemini":
+        client = get_gemini_client()
+    else:
+        client = get_llm_client()
+
     if "response_generator" not in st.session_state:
         engine = st.session_state.legal_engine
         query_engine = QueryEngine(
@@ -48,13 +66,15 @@ def get_response_generator():
             engine.chroma_client
         )
         prompt_builder = PromptBuilder()
-        llm_client = get_llm_client()
         st.session_state.response_generator = ResponseGenerator(
             query_engine=query_engine,
             prompt_builder=prompt_builder,
-            llm_client=llm_client,
+            llm_client=client,
             summaries_directory=st.session_state.legal_engine.config.summaries_directory
         )
+    else:
+        # Update client reference if provider changed
+        st.session_state.response_generator.llm_client = client
     return st.session_state.response_generator
 
 def main():
@@ -142,13 +162,52 @@ def display_scraped_urls(url):
 
 def render_chatbot_page():
     st.header("Legal Advisory Chatbot")
-    
-    api_key = os.environ.get("MINIMAX_API_KEY") or EngineConfig().minimax_api_key
+
+    # LLM Provider & Model selection
+    config = EngineConfig()
+    with st.sidebar:
+        st.subheader("LLM Settings")
+        provider = st.selectbox(
+            "Provider",
+            ["minimax", "gemini"],
+            index=0 if config.llm_provider == "minimax" else 1,
+            key="llm_provider_select"
+        )
+        if provider == "minimax":
+            api_key = os.environ.get("MINIMAX_API_KEY") or EngineConfig().minimax_api_key
+            st.session_state.llm_provider = "minimax"
+        else:
+            api_key = os.environ.get("GEMINI_API_KEY") or EngineConfig().gemini_api_key
+            st.session_state.llm_provider = "gemini"
+            if api_key:
+                gemini_models = [
+                    "gemini-2.5-flash",
+                    "gemini-3-flash",
+                    "gemini-3.1-flash-lite",
+                    "gemini-2.5-flash-lite",
+                ]
+                selected_model = st.selectbox("Gemini Model", gemini_models, index=0)
+                st.session_state.gemini_model = selected_model
+
+        if not api_key:
+            st.warning(f"{provider.upper()} API key not configured.")
+
+    if provider == "minimax":
+        api_key = os.environ.get("MINIMAX_API_KEY") or EngineConfig().minimax_api_key
+    else:
+        api_key = os.environ.get("GEMINI_API_KEY") or EngineConfig().gemini_api_key
+
     if not api_key:
-        st.warning("MINIMAX_API_KEY not configured. Please set it in environment variables.")
-        st.code("export MINIMAX_API_KEY=your_api_key_here", language="bash")
+        if provider == "minimax":
+            st.warning("MINIMAX_API_KEY not configured. Please set it in environment variables.")
+            st.code("export MINIMAX_API_KEY=your_api_key_here", language="bash")
+        else:
+            st.warning("GEMINI_API_KEY not configured. Please set it in environment variables.")
+            st.code("export GEMINI_API_KEY=your_api_key_here", language="bash")
         return
-    
+
+    config.llm_provider = provider
+
     websites = get_analyzed_websites()
     if not websites:
         st.warning("No websites analyzed yet. Please analyze a website first.")
