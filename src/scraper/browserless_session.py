@@ -39,6 +39,9 @@ class BrowserlessSessionManager:
         Fetch URL using Browserless API.
 
         Returns (content, status_code).
+
+        Uses domcontentloaded + 5s wait instead of networkidle2,
+        because networkidle2 hangs on sites with continuous polling (government SPAs, dashboards).
         """
         import time
         print(f"[Browserless] Starting fetch: {url}", flush=True)
@@ -49,11 +52,15 @@ class BrowserlessSessionManager:
                 json={
                     "url": url,
                     "gotoOptions": {
-                        "waitUntil": "networkidle2"
-                    }
+                        "waitUntil": "domcontentloaded",
+                        "timeout": 30000
+                    },
+                    # Give JS time to render after DOM is ready
+                    "waitForFunction": "document.body.innerHTML.length > 500",
+                    "timeout": 30000
                 },
                 headers={"Content-Type": "application/json"},
-                timeout=60
+                timeout=40
             )
             elapsed = time.time() - start
             print(f"[Browserless] Done fetch: {url} status={response.status_code} elapsed={elapsed:.1f}s", flush=True)
