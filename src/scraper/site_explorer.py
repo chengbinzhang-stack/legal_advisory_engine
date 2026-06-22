@@ -97,6 +97,14 @@ class SiteExplorer(BaseScraper):
                 response.status_code != 200 or
                 (html_content and is_spa_shell(html_content))
             )
+            if not needs_browserless and html_content:
+                # Additional check: if httpx returned very few links, page is likely JS-rendered
+                soup_check = BeautifulSoup(html_content, "html.parser")
+                link_count = len(soup_check.find_all("a", href=True))
+                print(f"[SiteExplorer] httpx found {link_count} links on {url}", flush=True)
+                if link_count < 10:
+                    print(f"[SiteExplorer] Very few links — assuming JS-rendered, using Browserless", flush=True)
+                    needs_browserless = True
             if needs_browserless and (self.browserless_session or self.browserless_api_key):
                 print(f"[SiteExplorer] Falling back to Browserless (status={response.status_code}): {url}", flush=True)
                 browserless_content, status = self._fetch_with_browserless(url)
