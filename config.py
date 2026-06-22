@@ -74,5 +74,16 @@ class EngineConfig:
             self.browserless_api_key = api_key
         if api_key := os.environ.get("GEMINI_API_KEY"):
             self.gemini_api_key = api_key
+        # Streamlit Cloud secrets
+        try:
+            import streamlit as st
+            if "GEMINI_API_KEY" in st.secrets:
+                self.gemini_api_key = st.secrets["GEMINI_API_KEY"]
+            if "MINIMAX_API_KEY" in st.secrets:
+                self.minimax_api_key = st.secrets["MINIMAX_API_KEY"]
+        except Exception:
+            pass
+        if api_key := os.environ.get("GEMINI_API_KEY"):
+            self.gemini_api_key = api_key
         os.makedirs(self.chroma_persist_directory, exist_ok=True)
         os.makedirs(self.summaries_directory, exist_ok=True)
