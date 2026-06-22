@@ -19,16 +19,10 @@ from src.chatbot.prompt_builder import PromptBuilder
 from src.rag.query_engine import QueryEngine
 
 if "legal_engine" not in st.session_state:
-    config = EngineConfig()
-    st.session_state.legal_engine = LegalDataEngine(config)
+    st.session_state.legal_engine = LegalDataEngine()
 
 if "chat_sessions" not in st.session_state:
     st.session_state.chat_sessions = {}
-
-if "llm_provider" not in st.session_state:
-    st.session_state.llm_provider = "minimax"
-if "gemini_model" not in st.session_state:
-    st.session_state.gemini_model = "gemini-2.5-flash"
 
 def get_llm_client():
     """Get or create MiniMax LLM client."""
@@ -77,8 +71,61 @@ def get_response_generator():
         st.session_state.response_generator.llm_client = client
     return st.session_state.response_generator
 
+def render_llm_settings_sidebar():
+    """Render LLM provider/model selector in sidebar. Returns selected provider."""
+    config = EngineConfig()
+    st.sidebar.subheader("🤖 LLM Settings")
+
+    # Initialize session state defaults
+    if "llm_provider" not in st.session_state:
+        st.session_state.llm_provider = config.llm_provider
+    if "gemini_model" not in st.session_state:
+        st.session_state.gemini_model = config.gemini_model
+
+    provider = st.sidebar.selectbox(
+        "Provider",
+        ["minimax", "gemini"],
+        index=0 if st.session_state.llm_provider == "minimax" else 1,
+        key="llm_provider_select"
+    )
+    st.session_state.llm_provider = provider
+
+    if provider == "gemini":
+        api_key = os.environ.get("GEMINI_API_KEY") or config.gemini_api_key
+        if api_key:
+            gemini_models = [
+                "gemini-2.5-flash",
+                "gemini-3-flash",
+                "gemini-3.1-flash-lite",
+                "gemini-2.5-flash-lite",
+            ]
+            model_idx = 0
+            if st.session_state.gemini_model in gemini_models:
+                model_idx = gemini_models.index(st.session_state.gemini_model)
+            selected_model = st.sidebar.selectbox(
+                "Gemini Model",
+                gemini_models,
+                index=model_idx,
+                key="gemini_model_select"
+            )
+            st.session_state.gemini_model = selected_model
+        else:
+            st.sidebar.warning("GEMINI_API_KEY not set in Secrets")
+
+    return provider
+
+
 def main():
     st.title("[Legal] Data Protection Engine & Advisory Chatbot")
+
+    # LLM settings in sidebar
+    current_provider = render_llm_settings_sidebar()
+
+    # Update config from session state (for legal_data_engine)
+    config = EngineConfig()
+    config.llm_provider = st.session_state.llm_provider
+    config.gemini_model = st.session_state.gemini_model
+
     st.sidebar.title("Navigation")
     page = st.sidebar.radio(
         "Go to",
@@ -163,50 +210,17 @@ def display_scraped_urls(url):
 def render_chatbot_page():
     st.header("Legal Advisory Chatbot")
 
-    # LLM Provider & Model selection
+    # Read provider from session state (set by main() sidebar)
+    provider = st.session_state.get("llm_provider", "minimax")
     config = EngineConfig()
-    with st.sidebar:
-        st.subheader("LLM Settings")
-        provider = st.selectbox(
-            "Provider",
-            ["minimax", "gemini"],
-            index=0 if config.llm_provider == "minimax" else 1,
-            key="llm_provider_select"
-        )
-        if provider == "minimax":
-            api_key = os.environ.get("MINIMAX_API_KEY") or EngineConfig().minimax_api_key
-            st.session_state.llm_provider = "minimax"
-        else:
-            api_key = os.environ.get("GEMINI_API_KEY") or EngineConfig().gemini_api_key
-            st.session_state.llm_provider = "gemini"
-            if api_key:
-                gemini_models = [
-                    "gemini-2.5-flash",
-                    "gemini-3-flash",
-                    "gemini-3.1-flash-lite",
-                    "gemini-2.5-flash-lite",
-                ]
-                selected_model = st.selectbox("Gemini Model", gemini_models, index=0)
-                st.session_state.gemini_model = selected_model
-
-        if not api_key:
-            st.warning(f"{provider.upper()} API key not configured.")
-
     if provider == "minimax":
-        api_key = os.environ.get("MINIMAX_API_KEY") or EngineConfig().minimax_api_key
+        api_key = os.environ.get("MINIMAX_API_KEY") or config.minimax_api_key
     else:
-        api_key = os.environ.get("GEMINI_API_KEY") or EngineConfig().gemini_api_key
+        api_key = os.environ.get("GEMINI_API_KEY") or config.gemini_api_key
 
     if not api_key:
-        if provider == "minimax":
-            st.warning("MINIMAX_API_KEY not configured. Please set it in environment variables.")
-            st.code("export MINIMAX_API_KEY=your_api_key_here", language="bash")
-        else:
-            st.warning("GEMINI_API_KEY not configured. Please set it in environment variables.")
-            st.code("export GEMINI_API_KEY=your_api_key_here", language="bash")
+        st.warning(f"{provider.upper()} API key not configured. Add it in Settings → Secrets.")
         return
-
-    config.llm_provider = provider
 
     websites = get_analyzed_websites()
     if not websites:

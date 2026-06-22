@@ -28,6 +28,16 @@ class LegalDataEngine:
             gemini_api_key=self.config.gemini_api_key,
             gemini_model=self.config.gemini_model
         )
+
+    def _refresh_classifier(self):
+        """Recreate classifier from current config (called on each website analysis to pick up provider changes)."""
+        self.classifier = LegalClassifier(
+            api_key=self.config.minimax_api_key,
+            base_url=self.config.minimax_base_url,
+            provider=self.config.llm_provider,
+            gemini_api_key=self.config.gemini_api_key,
+            gemini_model=self.config.gemini_model
+        )
         self.text_chunker = TextChunker(
             chunk_size=self.config.chunk_size,
             chunk_overlap=self.config.chunk_overlap,
@@ -53,6 +63,8 @@ class LegalDataEngine:
         self._analysis_cache: Dict[str, LegalAnalysis] = {}
 
     def process_website(self, url: str) -> LegalAnalysis:
+        # Refresh classifier to pick up any provider/model changes from session state
+        self._refresh_classifier()
         domain = self._extract_domain(url)
 
         # Check cache first - return cached result if valid and not expired
