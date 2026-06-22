@@ -17,14 +17,14 @@ class SiteExplorer(BaseScraper):
 
     LEGAL_URL_PATTERNS = [
         "terms", "condition", "agreement", "legal", "privacy",
-        "policy", "notice", "disclaimer", "guideline", "rule",
+        "policy", "policies", "notice", "disclaimer", "guideline", "rule",
         "use-policy", "acceptable-use", "user-agreement", "statement",
         "permission", "data-policy", "intellectual-property",
     ]
 
     LEGAL_LINK_TEXT_KEYWORDS = [
         "terms", "conditions", "privacy", "legal", "about",
-        "disclaimer", "notice", "policy", "agreement", "permission",
+        "disclaimer", "notice", "polic", "agreement", "permission",
         "data use", "data policy", "intellectual", "copyright",
     ]
 
