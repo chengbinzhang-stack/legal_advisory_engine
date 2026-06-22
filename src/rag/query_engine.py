@@ -6,7 +6,7 @@ from src.embeddings.chroma_client import ChromaClient
 # Maximum cosine distance for a result to be considered relevant
 # Cosine distance: 0 = identical, 1 = orthogonal, 2 = opposite
 # Results with distance > this threshold are filtered out
-MAX_SIMILARITY_DISTANCE = 1.0
+MAX_SIMILARITY_DISTANCE = 0.5
 
 
 class QueryEngine:

@@ -83,7 +83,7 @@ class GeminiClient:
             "contents": contents,
             "generationConfig": {
                 "maxOutputTokens": max_tokens,
-                "temperature": 0.7,
+                "temperature": 0.0,
             }
         }
         if system_instruction:
@@ -251,7 +251,7 @@ class ResponseGenerator:
         rag_results = self.query_engine.query(
             query_text=query,
             website_domain=website_domain,
-            n_results=5
+            n_results=3
         )
 
         # Hallucination guard: refuse if no relevant results or context too short
