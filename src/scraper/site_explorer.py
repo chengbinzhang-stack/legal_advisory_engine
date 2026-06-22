@@ -87,13 +87,18 @@ class SiteExplorer(BaseScraper):
             response = httpx.get(url, headers=self._build_headers(),
                                 timeout=self.timeout, follow_redirects=True)
             print(f"[SiteExplorer] httpx response: {response.status_code} for {url}", flush=True)
+            html_content = ""
             if response.status_code == 200:
                 html_content = response.text
                 final_url = str(response.url)
 
-            # If SPA detected and Browserless available, use it
-            if is_spa_shell(html_content) and self.browserless_session:
-                print(f"[SiteExplorer] SPA shell detected, using Browserless: {url}", flush=True)
+            # Fall back to Browserless on 403/401/500 or if SPA detected
+            needs_browserless = (
+                response.status_code != 200 or
+                (html_content and is_spa_shell(html_content))
+            )
+            if needs_browserless and (self.browserless_session or self.browserless_api_key):
+                print(f"[SiteExplorer] Falling back to Browserless (status={response.status_code}): {url}", flush=True)
                 browserless_content, status = self._fetch_with_browserless(url)
                 print(f"[SiteExplorer] Browserless response: {status} for {url}", flush=True)
                 if status == 200:

@@ -49,7 +49,7 @@ class BaseScraper(ABC):
                  browserless_api_key: str = None,
                  browserless_session: "BrowserlessSessionManager" = None):
         self.timeout = timeout
-        self.user_agent = user_agent or "LegalAdvisoryBot/1.0 (Research Purpose)"
+        self.user_agent = user_agent or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
         self.client = httpx.Client(timeout=timeout)
         self.browserless_api_key = browserless_api_key
         self.browserless_session = browserless_session
