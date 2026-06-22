@@ -72,6 +72,84 @@ class BrowserlessSessionManager:
             print(f"[Browserless] Error fetch: {url} elapsed={elapsed:.1f}s error={e}", flush=True)
             return "", 503
 
+    def fetch_with_click(self, url: str, button_text: str, timeout: int = 30) -> Tuple[str, int]:
+        """
+        Fetch URL, click a button by its text, and return the modal/dialog content.
+
+        Args:
+            url: Page URL to load
+            button_text: Text of the button to click (partial match)
+            timeout: Seconds to wait for modal to appear
+
+        Returns (modal_text_content, status_code).
+        """
+        import time
+        print(f"[Browserless] Starting fetch_with_click: {url}, button='{button_text}'", flush=True)
+        start = time.time()
+        try:
+            # Use puppeteer script to click button and extract modal content
+            script = f"""
+            (async () => {{
+                await page.goto('{url}', {{ waitUntil: 'domcontentloaded', timeout: 30000 }});
+                await page.waitForTimeout(2000);
+
+                // Click the button containing the text
+                const button = Array.from(document.querySelectorAll('button, a, [role="button"]'))
+                    .find(el => el.textContent.trim().includes('{button_text}'));
+                if (!button) {{
+                    return JSON.stringify({{ error: 'Button not found', text: '' }});
+                }}
+                await button.click();
+                await new Promise(r => setTimeout(r, {timeout * 1000}));
+
+                // Try to find modal/dialog content
+                let modalText = '';
+                const modalSelectors = [
+                    '[role="dialog"]', '[role="modal"]', '.modal', '.dialog',
+                    '.overlay', '.popup', '.terms-content', '.policy-content',
+                    '#myModal', '.modal-content', 'iframe'
+                ];
+                for (const sel of modalSelectors) {{
+                    const el = document.querySelector(sel);
+                    if (el) {{
+                        modalText = el.innerText || el.textContent || '';
+                        if (modalText.length > 50) break;
+                    }}
+                }}
+                // Fallback: get entire body if no modal found
+                if (!modalText || modalText.length < 50) {{
+                    modalText = document.body.innerText || document.body.textContent || '';
+                }}
+                return JSON.stringify({{ error: null, text: modalText.trim() }});
+            }})()
+            """
+            response = httpx.post(
+                f"{self.BASE_URL}/content?token={self.api_key}",
+                json={
+                    "url": "about:blank",
+                    "chromeOptions": {"args": ["--headless"]},
+                    "gotoOptions": {"waitUntil": "domcontentloaded", "timeout": 10000},
+                    "puppeteerScript": script,
+                    "timeout": 60
+                },
+                headers={"Content-Type": "application/json"},
+                timeout=70
+            )
+            elapsed = time.time() - start
+            print(f"[Browserless] Done fetch_with_click: {url} elapsed={elapsed:.1f}s", flush=True)
+            if response.status_code == 200:
+                import json
+                try:
+                    data = json.loads(response.text)
+                    return data.get("text", ""), 200
+                except Exception:
+                    return response.text[:5000], 200
+            return "", response.status_code
+        except Exception as e:
+            elapsed = time.time() - start
+            print(f"[Browserless] Error fetch_with_click: {url} elapsed={elapsed:.1f}s error={e}", flush=True)
+            return "", 503
+
     def close(self):
         """Close session (no-op for direct API mode)."""
         pass

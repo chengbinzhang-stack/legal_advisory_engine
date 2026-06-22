@@ -319,6 +319,22 @@ class SiteExplorer(BaseScraper):
                     for elem in soup(["script", "style", "nav", "footer", "header", "aside", "form"]):
                         elem.decompose()
                     content = soup.get_text(separator="\n", strip=True)
+
+                    # If content is too short, try clicking policy-related buttons
+                    if len(content) < 500 and self.browserless_session:
+                        print(f"[SiteExplorer] Content too short ({len(content)} chars), trying modal button click", flush=True)
+                        policy_button_texts = [
+                            "Website Policies", "Terms of Use", "Terms & Conditions",
+                            "Privacy Policy", "Legal", "Policies", "Legal Notice",
+                            "Terms", "Disclaimer"
+                        ]
+                        for btn_text in policy_button_texts:
+                            modal_text, modal_status = self.browserless_session.fetch_with_click(url, btn_text)
+                            if modal_text and len(modal_text) > 200:
+                                print(f"[SiteExplorer] Modal found via button '{btn_text}': {len(modal_text)} chars", flush=True)
+                                content = modal_text
+                                break
+
                     return ScrapedDocument(
                         document_type="terms_of_use", url=url,
                         raw_content=content, scraped_at=datetime.now(), success=True
