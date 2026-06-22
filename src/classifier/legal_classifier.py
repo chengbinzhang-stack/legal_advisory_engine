@@ -22,7 +22,7 @@ def _build_llm_client(api_key: str, base_url: str):
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json"
             }
-            payload = {"model": model, "messages": messages, "max_tokens": max_tokens}
+            payload = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": 0}
             response = self.http_client.post(
                 f"{self.base_url}/text/chatcompletion_v2",
                 headers=headers, json=payload
@@ -58,7 +58,7 @@ def _build_gemini_client(api_key: str, model: str):
             url = f"{self.base_url}/models/{model}:generateContent?key={self.api_key}"
             payload = {
                 "contents": contents,
-                "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.7}
+                "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.0}
             }
             if system_instruction:
                 payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
