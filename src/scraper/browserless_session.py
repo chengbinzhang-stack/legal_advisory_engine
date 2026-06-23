@@ -55,9 +55,10 @@ class BrowserlessSessionManager:
                         "waitUntil": "domcontentloaded",
                         "timeout": 30000
                     },
-                    # Give JS time to render after DOM is ready
-                    "waitForFunction": "document.body.innerHTML.length > 500",
-                    "timeout": 30000
+                    # Wait for JS to fully render
+                    "waitForFunction": "document.body.innerHTML.length > 200",
+                    "waitForFunctionTimeout": 15000,
+                    "timeout": 45000
                 },
                 headers={"Content-Type": "application/json"},
                 timeout=40
