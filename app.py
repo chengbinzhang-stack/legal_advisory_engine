@@ -200,6 +200,50 @@ def display_analysis(analysis):
     st.subheader("Analysis Summary")
     st.text(analysis.summary_text)
 
+
+def display_analysis_from_dict(data: dict):
+    """Display analysis results from a dict (used for manual submissions)."""
+    st.success(f"Analysis complete for {data['website_domain']}!")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Website Information")
+        st.write(f"**URL:** {data['website_url']}")
+        st.write(f"**Domain:** {data['website_domain']}")
+        st.write(f"**Category:** Bucket {data['category']}")
+        source = data.get("source", "auto")
+        st.write(f"**Source:** {'Manual Submission' if source == 'manual' else 'Auto Scraped'}")
+    with col2:
+        st.subheader("Permission Summary")
+        for param, perm in data.get("permissions", {}).items():
+            level = perm.get("level", "uncertain")
+            if level == "allowed":
+                label = f"[ALLOWED] {param}"
+            elif level == "not_allowed":
+                label = f"[DENIED] {param}"
+            else:
+                label = f"[UNCERTAIN] {param}"
+            with st.expander(label):
+                reasoning = perm.get("reasoning", "")
+                if reasoning:
+                    st.text(f"Reasoning: {reasoning}")
+                excerpts = perm.get("relevant_excerpts", [])
+                if excerpts:
+                    st.markdown("**Evidence:**")
+                    for exc in excerpts:
+                        if isinstance(exc, dict):
+                            source = exc.get('source', '')
+                            text = exc.get('text', '')[:500]
+                            st.markdown(f"> \"{text}\"")
+                        else:
+                            st.markdown(f"> \"{str(exc)[:500]}\"")
+    findings = data.get("unique_findings", [])
+    if findings:
+        st.subheader("Unique Findings")
+        for finding in findings:
+            st.write(f"- {finding}")
+    st.subheader("Analysis Summary")
+    st.text(data.get("summary_text", ""))
+
 def display_scraped_urls(url):
     """Display successfully scraped document URLs in an expander."""
     website_data = st.session_state.legal_engine._scrape_website(url)
@@ -410,7 +454,7 @@ def render_manual_submission_page():
                     json.dump(summary_data, f, indent=2, ensure_ascii=False)
 
                 st.success(f"✅ Saved and analyzed! Domain: {domain}")
-                st.json(summary_data)
+                display_analysis_from_dict(summary_data)
 
             except Exception as e:
                 st.error(f"Error: {str(e)}")
