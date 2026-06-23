@@ -143,8 +143,11 @@ class BrowserlessSessionManager:
                 import json
                 try:
                     data = json.loads(response.text)
-                    return data.get("text", ""), 200
+                    modal_text = data.get("text", "")
+                    print(f"[Browserless fetch_with_click] Modal text preview: {modal_text[:500]}", flush=True)
+                    return modal_text, 200
                 except Exception:
+                    print(f"[Browserless fetch_with_click] Raw response preview: {response.text[:500]}", flush=True)
                     return response.text[:5000], 200
             return "", response.status_code
         except Exception as e:
