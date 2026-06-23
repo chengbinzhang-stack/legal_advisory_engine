@@ -112,6 +112,21 @@ class SiteExplorer(BaseScraper):
                 if status == 200:
                     html_content = browserless_content
 
+                # Try clicking policy-related buttons to extract modal content
+                if self.browserless_session and status == 200:
+                    policy_buttons = [
+                        "Website Policies", "Terms of Use", "Terms & Conditions",
+                        "Privacy Policy", "Legal", "Policies", "Legal Notice",
+                        "Terms", "Disclaimer", "About", "Contact"
+                    ]
+                    for btn_text in policy_buttons:
+                        modal_text, modal_status = self.browserless_session.fetch_with_click(url, btn_text)
+                        if modal_text and len(modal_text) > 200:
+                            print(f"[SiteExplorer] Modal found via button '{btn_text}': {len(modal_text)} chars", flush=True)
+                            # Append modal content to html_content for link extraction
+                            html_content += "\n" + modal_text
+                            break
+
             if not html_content:
                 print(f"[SiteExplorer] No content for: {url}", flush=True)
                 return
