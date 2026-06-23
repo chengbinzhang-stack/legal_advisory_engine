@@ -4,6 +4,8 @@ Main Streamlit Application
 """
 import streamlit as st
 import os
+import json
+from datetime import datetime
 
 st.set_page_config(
     page_title="Legal Advisory Engine",
@@ -129,10 +131,12 @@ def main():
     st.sidebar.title("Navigation")
     page = st.sidebar.radio(
         "Go to",
-        ["Website Analysis", "Legal Advisory Chatbot", "Summary Dashboard"]
+        ["Website Analysis", "Manual Submission", "Legal Advisory Chatbot", "Summary Dashboard"]
     )
     if page == "Website Analysis":
         render_website_analysis_page()
+    elif page == "Manual Submission":
+        render_manual_submission_page()
     elif page == "Legal Advisory Chatbot":
         render_chatbot_page()
     elif page == "Summary Dashboard":
@@ -302,6 +306,131 @@ def render_dashboard_page():
         st.dataframe(df, use_container_width=True)
     else:
         st.info("No summary data found.")
+
+def render_manual_submission_page():
+    st.header("📝 Manual Terms Submission")
+    st.info("Use this if automatic scraping failed or you want to provide your own terms of use document.")
+
+    url_input = st.text_input("Website URL", placeholder="https://example.com", key="manual_url")
+    terms_text = st.text_area(
+        "Terms of Use / Privacy Policy text",
+        placeholder="Paste the full legal text here...",
+        height=300,
+        key="manual_terms"
+    )
+
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        submit = st.button("Analyze & Save", type="primary")
+
+    if submit:
+        if not url_input:
+            st.warning("Please enter a website URL.")
+            return
+        if not terms_text or len(terms_text) < 200:
+            st.warning("Please enter a valid legal document (at least 200 characters).")
+            return
+
+        domain = url_input.replace("https://", "").replace("http://", "").split("/")[0]
+
+        with st.spinner("Saving document and analyzing..."):
+            try:
+                # 1. Save raw document
+                manual_dir = os.path.join(config.data_directory, "manual_docs")
+                os.makedirs(manual_dir, exist_ok=True)
+                raw_path = os.path.join(manual_dir, f"{domain}_raw.txt")
+                with open(raw_path, "w", encoding="utf-8") as f:
+                    f.write(f"URL: {url_input}\n")
+                    f.write(f"Submitted: {datetime.now().isoformat()}\n")
+                    f.write(f"{'='*60}\n\n")
+                    f.write(terms_text)
+
+                # 2. Use LegalClassifier to analyze
+                api_key = os.environ.get("MINIMAX_API_KEY") or config.minimax_api_key
+                gemini_key = os.environ.get("GEMINI_API_KEY") or config.gemini_api_key
+                provider = st.session_state.get("llm_provider", "minimax")
+
+                if provider == "gemini":
+                    classifier_api_key = gemini_key
+                    classifier_base_url = None
+                    classifier_provider = "gemini"
+                    classifier_gemini_model = st.session_state.get("gemini_model", config.gemini_model)
+                else:
+                    classifier_api_key = api_key
+                    classifier_base_url = config.minimax_base_url
+                    classifier_provider = "minimax"
+                    classifier_gemini_model = None
+
+                if not classifier_api_key:
+                    st.warning(f"{provider.upper()} API key not configured.")
+                    return
+
+                from src.classifier.legal_classifier import LegalClassifier
+                classifier = LegalClassifier(
+                    api_key=classifier_api_key,
+                    base_url=classifier_base_url or "https://api.minimax.chat/v1",
+                    provider=classifier_provider,
+                    gemini_api_key=classifier_gemini_model if provider == "gemini" else None,
+                    gemini_model=classifier_gemini_model if provider == "gemini" else "gemini-2.5-flash"
+                )
+
+                analysis = classifier.classify_permissions(
+                    text=terms_text,
+                    website_url=url_input,
+                    website_domain=domain,
+                    robots_txt="",
+                    document_urls={"manual_submission": url_input}
+                )
+
+                # 3. Save analysis as summary JSON (same format as automatic analysis)
+                summary_path = os.path.join(config.summaries_directory, f"summary_{domain.replace('.', '_')}.json")
+                os.makedirs(config.summaries_directory, exist_ok=True)
+
+                summary_data = {
+                    "website_url": url_input,
+                    "website_domain": domain,
+                    "category": analysis.category.value if hasattr(analysis.category, 'value') else analysis.category,
+                    "summary_text": analysis.summary_text,
+                    "permissions": {
+                        param: {
+                            "level": getattr(perm, 'permission', perm.get('permission', 'uncertain')).value if hasattr(getattr(perm, 'permission', perm.get('permission', 'uncertain')), 'value') else perm.get('level', 'uncertain'),
+                            "reasoning": getattr(perm, 'reasoning', perm.get('reasoning', '')),
+                            "relevant_excerpts": getattr(perm, 'relevant_excerpts', perm.get('relevant_excerpts', [])),
+                            "source_documents": getattr(perm, 'source_documents', perm.get('source_documents', [])),
+                        } for param, perm in (getattr(analysis, 'permissions', {}) or {}).items()
+                    },
+                    "unique_findings": getattr(analysis, 'unique_findings', []),
+                    "source": "manual",  # Mark as manual submission
+                    "raw_doc_path": raw_path,
+                    "analyzed_at": datetime.now().isoformat()
+                }
+
+                with open(summary_path, "w", encoding="utf-8") as f:
+                    json.dump(summary_data, f, indent=2, ensure_ascii=False)
+
+                st.success(f"✅ Saved and analyzed! Domain: {domain}")
+                st.json(summary_data)
+
+            except Exception as e:
+                st.error(f"Error: {str(e)}")
+
+    # Show previously submitted manual documents
+    st.divider()
+    st.subheader("📂 Previously Submitted Documents")
+    manual_dir = os.path.join(config.data_directory, "manual_docs")
+    if os.path.exists(manual_dir):
+        files = [f for f in os.listdir(manual_dir) if f.endswith("_raw.txt")]
+        if files:
+            for f in sorted(files):
+                domain = f.replace("_raw.txt", "")
+                with st.expander(domain):
+                    path = os.path.join(manual_dir, f)
+                    content = open(path, "r", encoding="utf-8").read()
+                    st.text(content[:1000] + ("..." if len(content) > 1000 else ""))
+                    st.caption(f"Full text: {path}")
+        else:
+            st.info("No manual submissions yet.")
+
 
 if __name__ == "__main__":
     main()
