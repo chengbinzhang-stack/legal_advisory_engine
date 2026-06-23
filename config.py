@@ -16,7 +16,7 @@ class EngineConfig:
     user_agent: str = "LegalAdvisoryBot/1.0 (+https://example.com/bot)"
     respect_robots_txt: bool = True
     javascript_rendering: bool = False
-    browserless_api_key: Optional[str] = "2Uinlj21klsSOP800e349e70b75773bc1e823edb93c0a4203"
+    browserless_api_key: Optional[str] = "2Uinlj21klsSOP80d0878fceef71922f32516551d02f95a3c"
 
     embedding_model: str = "embo-01"
     embedding_batch_size: int = 32

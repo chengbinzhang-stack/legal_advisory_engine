@@ -117,6 +117,8 @@ class SiteExplorer(BaseScraper):
                 return
 
             soup = BeautifulSoup(html_content, "html.parser")
+            total_links = len(soup.find_all("a", href=True))
+            print(f"[SiteExplorer] Parsed HTML: {total_links} total links, content length: {len(html_content)}", flush=True)
 
             # Classify current page
             page_category = self._classify_url(final_url)

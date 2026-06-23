@@ -65,6 +65,7 @@ class BrowserlessSessionManager:
             elapsed = time.time() - start
             print(f"[Browserless] Done fetch: {url} status={response.status_code} elapsed={elapsed:.1f}s", flush=True)
             if response.status_code == 200:
+                print(f"[Browserless] Response length: {len(response.text)} chars, preview: {response.text[:300]}", flush=True)
                 return response.text, 200
             return "", response.status_code
         except Exception as e:
