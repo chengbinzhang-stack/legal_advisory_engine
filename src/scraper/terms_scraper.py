@@ -22,6 +22,7 @@ class TermsScraper(BaseScraper):
         "/user-agreement",
         "/content/terms",
         "/terms-and-conditions",
+        "/terms-conditions",
         "/en/terms-of-use",
         "/en/terms-of-service",
         "/about/terms",
@@ -38,6 +39,9 @@ class TermsScraper(BaseScraper):
         "/rules",
         "/acceptable-use",
         "/use-policy",
+        "/disclaimer",
+        "/disclaimer-policy",
+        "/website-disclaimer",
     ]
 
     DOMAIN_SPECIFIC_PATHS = {
@@ -86,7 +90,7 @@ class TermsScraper(BaseScraper):
             return sitemap_result
 
         # 3. Homepage link discovery - find legal links from homepage
-        homepage_links = self._find_legal_links(base_url, ["terms", "conditions", "agreement"])
+        homepage_links = self._find_legal_links(base_url, ["terms", "conditions", "agreement", "disclaimer", "notice", "polic"])
         for link in homepage_links[:5]:
             result = self._try_scrape(link)
             if result.success and len(result.raw_content) >= self.MIN_CONTENT_LENGTH:
