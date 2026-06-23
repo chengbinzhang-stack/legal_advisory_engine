@@ -55,9 +55,9 @@ class BrowserlessSessionManager:
                         "waitUntil": "domcontentloaded",
                         "timeout": 30000
                     },
-                    # Wait for JS to fully render
-                    "waitForFunction": "document.body.innerHTML.length > 200",
-                    "waitForFunctionTimeout": 15000,
+                    # Wait for at least 10 interactive elements (buttons/links) to appear
+                    "waitForFunction": "document.querySelectorAll('a, button, [role=button]').length >= 10",
+                    "waitForFunctionTimeout": 20000,
                     "timeout": 45000
                 },
                 headers={"Content-Type": "application/json"},
