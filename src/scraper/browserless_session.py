@@ -47,17 +47,11 @@ class BrowserlessSessionManager:
         print(f"[Browserless] Starting fetch: {url}", flush=True)
         start = time.time()
         try:
+            print(f"[Browserless] Request URL: {self.BASE_URL}/content?token={self.api_key[:10]}...", flush=True)
+            print(f"[Browserless] Request body: {{\"url\": \"{url}\"}}", flush=True)
             response = httpx.post(
                 f"{self.BASE_URL}/content?token={self.api_key}",
-                json={
-                    "url": url,
-                    "gotoOptions": {
-                        "waitUntil": "domcontentloaded",
-                        "timeout": 30000
-                    },
-                    "timeout": 45000
-                },
-                headers={"Content-Type": "application/json"},
+                json={"url": url},
                 timeout=50
             )
             elapsed = time.time() - start
