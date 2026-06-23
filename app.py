@@ -308,6 +308,7 @@ def render_dashboard_page():
         st.info("No summary data found.")
 
 def render_manual_submission_page():
+    config = EngineConfig()
     st.header("📝 Manual Terms Submission")
     st.info("Use this if automatic scraping failed or you want to provide your own terms of use document.")
 
