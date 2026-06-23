@@ -214,6 +214,17 @@ Legal document text:
                     elif isinstance(ex, str) and ex:
                         excerpt_list.append({"text": ex, "source": ""})
 
+                # Normalize permission value - guard against non-standard LLM responses
+                perm_str = str(perm_level).lower().strip()
+                if perm_str in ("allowed", "permit", "permitted", "yes", "true"):
+                    perm_level = "allowed"
+                elif perm_str in ("not_allowed", "denied", "prohibited", "forbidden", "no", "false"):
+                    perm_level = "not_allowed"
+                elif perm_str in ("uncertain", "unknown", "unclear", "unclear"):
+                    perm_level = "uncertain"
+                else:
+                    perm_level = "uncertain"
+
                 # If no excerpts but permission is not uncertain, force uncertain (hallucination guard)
                 if not excerpt_list and perm_level not in ("uncertain", "not_applicable"):
                     perm_level = "uncertain"
