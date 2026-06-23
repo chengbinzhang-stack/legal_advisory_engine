@@ -394,11 +394,11 @@ def render_manual_submission_page():
                     "summary_text": analysis.summary_text,
                     "permissions": {
                         param: {
-                            "level": getattr(perm, 'permission', perm.get('permission', 'uncertain')).value if hasattr(getattr(perm, 'permission', perm.get('permission', 'uncertain')), 'value') else perm.get('level', 'uncertain'),
-                            "reasoning": getattr(perm, 'reasoning', perm.get('reasoning', '')),
-                            "relevant_excerpts": getattr(perm, 'relevant_excerpts', perm.get('relevant_excerpts', [])),
-                            "source_documents": getattr(perm, 'source_documents', perm.get('source_documents', [])),
-                        } for param, perm in (getattr(analysis, 'permissions', {}) or {}).items()
+                            "level": perm.permission.value,
+                            "reasoning": perm.reasoning,
+                            "relevant_excerpts": perm.relevant_excerpts,
+                            "source_documents": perm.source_documents,
+                        } for param, perm in analysis.permissions.items()
                     },
                     "unique_findings": getattr(analysis, 'unique_findings', []),
                     "source": "manual",  # Mark as manual submission
