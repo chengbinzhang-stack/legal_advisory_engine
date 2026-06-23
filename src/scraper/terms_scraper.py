@@ -110,7 +110,9 @@ class TermsScraper(BaseScraper):
         # 6. Site exploration - crawl the site to discover legal pages
         explorer = SiteExplorer(
             max_depth=2, max_links=30, timeout=self.timeout,
-            user_agent=self.user_agent, browserless_api_key=self.browserless_api_key
+            user_agent=self.user_agent,
+            browserless_api_key=self.browserless_api_key,
+            browserless_session=self.browserless_session
         )
         discovery = explorer.discover_legal_pages(base_url)
         for terms_url in discovery.get("terms_of_use", [])[:10]:
