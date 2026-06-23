@@ -55,13 +55,10 @@ class BrowserlessSessionManager:
                         "waitUntil": "domcontentloaded",
                         "timeout": 30000
                     },
-                    # Wait for at least 10 interactive elements (buttons/links) to appear
-                    "waitForFunction": "document.querySelectorAll('a, button, [role=button]').length >= 10",
-                    "waitForFunctionTimeout": 20000,
                     "timeout": 45000
                 },
                 headers={"Content-Type": "application/json"},
-                timeout=40
+                timeout=50
             )
             elapsed = time.time() - start
             print(f"[Browserless] Done fetch: {url} status={response.status_code} elapsed={elapsed:.1f}s", flush=True)
