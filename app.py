@@ -209,7 +209,7 @@ def display_analysis_from_dict(data: dict):
         st.subheader("Website Information")
         st.write(f"**URL:** {data['website_url']}")
         st.write(f"**Domain:** {data['website_domain']}")
-        st.write(f"**Category:** Bucket {data['category']}")
+        st.write(f"**Category:** Bucket {data['category']}" if isinstance(data['category'], int) else f"**Category:** {data['category']}")
         source = data.get("source", "auto")
         st.write(f"**Source:** {'Manual Submission' if source == 'manual' else 'Auto Scraped'}")
     with col2:
@@ -217,11 +217,11 @@ def display_analysis_from_dict(data: dict):
         for param, perm in data.get("permissions", {}).items():
             level = perm.get("level", "uncertain")
             if level == "allowed":
-                label = f"[ALLOWED] {param}"
+                label = f"[✅ ALLOWED] {param}"
             elif level == "not_allowed":
-                label = f"[DENIED] {param}"
+                label = f"[❌ DENIED] {param}"
             else:
-                label = f"[UNCERTAIN] {param}"
+                label = f"[❓ UNCERTAIN] {param}"
             with st.expander(label):
                 reasoning = perm.get("reasoning", "")
                 if reasoning:
@@ -335,14 +335,19 @@ def render_dashboard_page():
             import json
             with open(summary_path, "r") as f:
                 summary = json.load(f)
+            def fmt_level(level):
+                if level == "allowed": return "✅"
+                if level == "not_allowed": return "❌"
+                if level == "uncertain": return "❓"
+                return level
             data.append({
                 "Domain": domain,
                 "URL": summary.get("website_url", "N/A"),
-                "Category": summary.get("category", "N/A"),
-                "Scraping": summary.get("permissions", {}).get("scraping", {}).get("level", "N/A"),
-                "Storing": summary.get("permissions", {}).get("storing", {}).get("level", "N/A"),
-                "Display": summary.get("permissions", {}).get("free_display", {}).get("level", "N/A"),
-                "Redistributing": summary.get("permissions", {}).get("free_redistribute", {}).get("level", "N/A")
+                "Category": f"Bucket {summary.get('category', '?')}",
+                "Scraping": fmt_level(summary.get("permissions", {}).get("scraping", {}).get("level", "")),
+                "Storing": fmt_level(summary.get("permissions", {}).get("storing", {}).get("level", "")),
+                "Display": fmt_level(summary.get("permissions", {}).get("free_display", {}).get("level", "")),
+                "Redistributing": fmt_level(summary.get("permissions", {}).get("free_redistribute", {}).get("level", ""))
             })
     if data:
         import pandas as pd
