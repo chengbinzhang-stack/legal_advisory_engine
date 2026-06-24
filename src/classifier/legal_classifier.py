@@ -38,8 +38,7 @@ PERMISSION_PARAMS = [
     "free_redistribute", "subscription_redistribute"
 ]
 
-SYSTEM_PROMPT = "" \
-"
+SYSTEM_PROMPT = """
 Given the full text of a website's legal document, analyze it and output a structured JSON object describing permissions for 7 parameters.
 
 The 7 parameters to analyze:
