@@ -215,20 +215,40 @@ Legal document text:
                 }
                 perm_level = perm_map.get(raw_perm.lower() if isinstance(raw_perm, str) else raw_perm, "uncertain")
 
-                # Override perm_level based on reasoning keywords if there's a contradiction
+                # Override perm_level based on reasoning keywords to fix LLM misclassifications
+                # The LLM may return "uncertain" or an incorrect label, but the reasoning text
+                # often contains explicit keywords that reveal the true permission status
                 reasoning_lower = param_data.get("reasoning", "").lower()
-                if perm_level == "uncertain":
-                    # Check if reasoning explicitly says prohibited/allowed despite "uncertain" label
-                    forbid_kw = ["explicitly prohibit", "expressly prohibit", "prohibited", "not allowed", "strictly forbidden",
-                                 "is not permitted", "are not permitted", "is prohibited", "are prohibited",
-                                 "prohibits", "forbidden", "disallowed"]
-                    allow_kw = ["explicitly permit", "expressly permit", "expressly allowed", "explicitly allowed",
-                                "you may", "you can", "is permitted", "are permitted", "is allowed", "are allowed",
-                                "grants the right", "has the right to"]
-                    if any(kw in reasoning_lower for kw in forbid_kw):
-                        perm_level = "not_allowed"
-                    elif any(kw in reasoning_lower for kw in allow_kw):
-                        perm_level = "allowed"
+
+                # Keywords that indicate prohibition/denial
+                forbid_kw = [
+                    "explicitly prohibit", "expressly prohibit", "prohibited", "not allowed",
+                    "strictly forbidden", "is not permitted", "are not permitted", "is prohibited",
+                    "are prohibited", "prohibits", "forbidden", "disallowed",
+                    "without our express prior permission", "without prior permission",
+                    "expressly reserved", "all rights reserved", "no part of the service"
+                ]
+                # Keywords that indicate explicit permission/allowance
+                allow_kw = [
+                    "explicitly permit", "expressly permit", "expressly allowed", "explicitly allowed",
+                    "you may", "you can", "is permitted", "are permitted", "is allowed", "are allowed",
+                    "grants the right", "has the right to", "hereby grants", "freely use",
+                    "no restriction", "without restriction", "open license"
+                ]
+
+                # Always check reasoning keywords — they override whatever the LLM returned
+                # because the reasoning is the LLM's own explanation, which is more reliable
+                has_forbid = any(kw in reasoning_lower for kw in forbid_kw)
+                has_allow = any(kw in reasoning_lower for kw in allow_kw)
+
+                if has_forbid and not has_allow:
+                    perm_level = "not_allowed"
+                elif has_allow and not has_forbid:
+                    perm_level = "allowed"
+                elif has_forbid and has_allow:
+                    # Both present — stay with LLM's original classification
+                    pass
+                # If neither keyword present and LLM already gave a non-uncertain answer, keep it
 
                 # Parse excerpts: [{"text": "...", "source": "actual_url"}]
                 raw_excerpts = param_data.get("relevant_excerpts", [])
@@ -248,9 +268,7 @@ Legal document text:
                     reasoning=param_data.get("reasoning", "No reasoning provided"),
                     relevant_excerpts=excerpt_list,
                     source_documents=[],  # No longer used, kept for backward compat
-                    confidence_score=0.95 if perm_level != "uncertain" else 0.5
-                if perm_level not in ("uncertain", "not_applicable"):
-                    permission.confidence_score = 0.95
+                    confidence_score=0.95 if perm_level not in ("uncertain", "not_applicable") else 0.5
                 )
                 permissions[param] = permission
 
