@@ -215,6 +215,21 @@ Legal document text:
                 }
                 perm_level = perm_map.get(raw_perm.lower() if isinstance(raw_perm, str) else raw_perm, "uncertain")
 
+                # Override perm_level based on reasoning keywords if there's a contradiction
+                reasoning_lower = param_data.get("reasoning", "").lower()
+                if perm_level == "uncertain":
+                    # Check if reasoning explicitly says prohibited/allowed despite "uncertain" label
+                    forbid_kw = ["explicitly prohibit", "expressly prohibit", "prohibited", "not allowed", "strictly forbidden",
+                                 "is not permitted", "are not permitted", "is prohibited", "are prohibited",
+                                 "prohibits", "forbidden", "disallowed"]
+                    allow_kw = ["explicitly permit", "expressly permit", "expressly allowed", "explicitly allowed",
+                                "you may", "you can", "is permitted", "are permitted", "is allowed", "are allowed",
+                                "grants the right", "has the right to"]
+                    if any(kw in reasoning_lower for kw in forbid_kw):
+                        perm_level = "not_allowed"
+                    elif any(kw in reasoning_lower for kw in allow_kw):
+                        perm_level = "allowed"
+
                 # Parse excerpts: [{"text": "...", "source": "actual_url"}]
                 raw_excerpts = param_data.get("relevant_excerpts", [])
                 excerpt_list = []
@@ -234,6 +249,8 @@ Legal document text:
                     relevant_excerpts=excerpt_list,
                     source_documents=[],  # No longer used, kept for backward compat
                     confidence_score=0.95 if perm_level != "uncertain" else 0.5
+                if perm_level not in ("uncertain", "not_applicable"):
+                    permission.confidence_score = 0.95
                 )
                 permissions[param] = permission
 
