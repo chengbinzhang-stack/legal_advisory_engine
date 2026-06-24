@@ -32,6 +32,43 @@ def _build_llm_client(api_key: str, base_url: str):
     return MiniMaxClient(api_key, base_url)
 
 
+def _build_gemini_client(api_key: str, model: str):
+    """Create Gemini LLM client."""
+    import httpx
+    class GeminiClient:
+        def __init__(self, api_key, model):
+            self.api_key = api_key
+            self.model = model
+            self.base_url = "https://generativelanguage.googleapis.com/v1beta"
+            self.http_client = httpx.Client(timeout=120.0)
+
+        def chat(self, messages, model=None, max_tokens=4096):
+            model = model or self.model
+            system_instruction = None
+            contents = []
+            for msg in messages:
+                role = msg.get("role", "user")
+                text = msg.get("content", "")
+                if role == "system":
+                    system_instruction = text
+                elif role == "user":
+                    contents.append({"role": "user", "parts": [{"text": text}]})
+                elif role == "assistant":
+                    contents.append({"role": "model", "parts": [{"text": text}]})
+            url = f"{self.base_url}/models/{model}:generateContent?key={self.api_key}"
+            payload = {
+                "contents": contents,
+                "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.0}
+            }
+            if system_instruction:
+                payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+            response = self.http_client.post(url, json=payload)
+            response.raise_for_status()
+            result = response.json()
+            return result["candidates"][0]["content"]["parts"][0]["text"]
+    return GeminiClient(api_key, model)
+
+
 PERMISSION_PARAMS = [
     "scraping", "manual_collection", "storing",
     "free_display", "subscription_display",
@@ -86,9 +123,18 @@ Key rules:
 class LegalClassifier:
     """Classifies legal documents using LLM for semantic understanding."""
 
-    def __init__(self, api_key: str = None, base_url: str = "https://api.minimax.chat/v1"):
+    def __init__(
+        self,
+        api_key: str = None,
+        base_url: str = "https://api.minimax.chat/v1",
+        provider: str = "minimax",
+        gemini_api_key: str = None,
+        gemini_model: str = "gemini-2.5-flash"
+    ):
         self.llm_client = None
-        if api_key:
+        if provider == "gemini" and gemini_api_key:
+            self.llm_client = _build_gemini_client(gemini_api_key, gemini_model)
+        elif api_key:
             self.llm_client = _build_llm_client(api_key, base_url)
 
     def classify_permissions(

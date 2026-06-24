@@ -30,12 +30,17 @@ class EngineConfig:
     min_chunk_size: int = 100
 
     anthropic_api_key: Optional[str] = None
-    minimax_group_id = "2057705580675473651"
+    minimax_group_id: str = "2057705580675473651"
     minimax_api_key: Optional[str] = "sk-cp-qzt0Jl0fXRCv5d460DOTSfJz6FWAHj_oDHMKIYm0HCbGPSLcNSgijNr2vrm2Hy1CFINZK8i2bbDE_tGkJFWRT1u1Ary2lcXTjQAQ_kmGgZjT2a78bdZ0Q2Q"
     minimax_model: str = "MiniMax-Text-01"
     minimax_base_url: str = "https://api.minimax.chat/v1"
     llm_model: str = "MiniMax-Text-01"
     llm_max_tokens: int = 2048
+
+    # LLM provider: "minimax" or "gemini"
+    llm_provider: str = "minimax"
+    gemini_api_key: Optional[str] = None
+    gemini_model: str = "gemini-2.5-flash"
 
     max_workers: int = 4
     log_level: str = "INFO"
@@ -55,6 +60,8 @@ class EngineConfig:
             self.anthropic_api_key = api_key
         if api_key := os.environ.get("MINIMAX_API_KEY"):
             self.minimax_api_key = api_key
+        if api_key := os.environ.get("GEMINI_API_KEY"):
+            self.gemini_api_key = api_key
         if device := os.environ.get("EMBEDDING_DEVICE"):
             self.embedding_device = device
         if group_id := os.environ.get("MINIMAX_GROUP_ID"):

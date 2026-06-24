@@ -14,7 +14,7 @@ st.set_page_config(
 from config import EngineConfig
 from src.legal_data_engine import LegalDataEngine
 from src.models.legal_analysis import PermissionLevel
-from src.chatbot.response_generator import ResponseGenerator, MiniMaxClient
+from src.chatbot.response_generator import ResponseGenerator, MiniMaxClient, GeminiClient
 from src.chatbot.prompt_builder import PromptBuilder
 from src.rag.query_engine import QueryEngine
 
@@ -26,17 +26,28 @@ if "chat_sessions" not in st.session_state:
     st.session_state.chat_sessions = {}
 
 def get_llm_client():
-    """Get or create MiniMax LLM client."""
+    """Get or create LLM client based on current provider."""
     if "llm_client" not in st.session_state:
         config = EngineConfig()
-        api_key = config.minimax_api_key or os.environ.get("MINIMAX_API_KEY")
-        if api_key:
-            st.session_state.llm_client = MiniMaxClient(
-                api_key=api_key,
-                base_url=config.minimax_base_url
-            )
+        provider = st.session_state.get("_llm_provider", "minimax")
+        if provider == "gemini":
+            api_key = config.gemini_api_key or os.environ.get("GEMINI_API_KEY")
+            if api_key:
+                st.session_state.llm_client = GeminiClient(
+                    api_key=api_key,
+                    model=config.gemini_model
+                )
+            else:
+                st.session_state.llm_client = None
         else:
-            st.session_state.llm_client = None
+            api_key = config.minimax_api_key or os.environ.get("MINIMAX_API_KEY")
+            if api_key:
+                st.session_state.llm_client = MiniMaxClient(
+                    api_key=api_key,
+                    base_url=config.minimax_base_url
+                )
+            else:
+                st.session_state.llm_client = None
     return st.session_state.llm_client
 
 def get_response_generator():
@@ -59,6 +70,31 @@ def get_response_generator():
 
 def main():
     st.title("[Legal] Data Protection Engine & Advisory Chatbot")
+    st.sidebar.title("Settings")
+
+    # LLM Provider selector
+    provider = st.sidebar.selectbox(
+        "LLM Provider",
+        ["minimax", "gemini"],
+        index=0 if st.session_state.get("_llm_provider", "minimax") == "minimax" else 1,
+        key="_llm_provider"
+    )
+
+    # Reinitialize engine if provider changed
+    if "_llm_provider" not in st.session_state:
+        st.session_state._llm_provider = provider
+
+    if provider != st.session_state._llm_provider:
+        st.session_state._llm_provider = provider
+        config = EngineConfig()
+        config.llm_provider = provider
+        st.session_state.legal_engine = LegalDataEngine(config)
+        # Clear cached clients that depend on provider
+        for key in list(st.session_state.keys()):
+            if key in ("llm_client", "response_generator"):
+                del st.session_state[key]
+        st.rerun()
+
     st.sidebar.title("Navigation")
     page = st.sidebar.radio(
         "Go to",

@@ -42,6 +42,42 @@ class MiniMaxClient:
         return result["choices"][0]["message"]["content"]
 
 
+class GeminiClient:
+    """Gemini API client for chatbot."""
+
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
+        self.api_key = api_key
+        self.model = model
+        self.base_url = "https://generativelanguage.googleapis.com/v1beta"
+        self.http_client = httpx.Client(timeout=60.0)
+
+    def chat(self, messages: List[Dict[str, str]], model: str = None, max_tokens: int = 2048) -> str:
+        """Send chat request to Gemini API."""
+        model = model or self.model
+        system_instruction = None
+        contents = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            text = msg.get("content", "")
+            if role == "system":
+                system_instruction = text
+            elif role == "user":
+                contents.append({"role": "user", "parts": [{"text": text}]})
+            elif role == "assistant":
+                contents.append({"role": "model", "parts": [{"text": text}]})
+        url = f"{self.base_url}/models/{model}:generateContent?key={self.api_key}"
+        payload = {
+            "contents": contents,
+            "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.0}
+        }
+        if system_instruction:
+            payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+        response = self.http_client.post(url, json=payload)
+        response.raise_for_status()
+        result = response.json()
+        return result["candidates"][0]["content"]["parts"][0]["text"]
+
+
 class ResponseGenerator:
     """
     Generates responses for the legal advisory chatbot.
