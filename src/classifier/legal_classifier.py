@@ -17,12 +17,12 @@ def _build_llm_client(api_key: str, base_url: str):
             self.base_url = base_url
             self.http_client = httpx.Client(timeout=120.0)
 
-        def chat(self, messages, model="MiniMax-Text-01", max_tokens=4096):
+        def chat(self, messages, model="MiniMax-Text-01", max_tokens=4096, temperature=0):
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json"
             }
-            payload = {"model": model, "messages": messages, "max_tokens": max_tokens}
+            payload = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
             response = self.http_client.post(
                 f"{self.base_url}/text/chatcompletion_v2",
                 headers=headers, json=payload
