@@ -21,7 +21,7 @@ class MiniMaxClient:
         self.base_url = base_url
         self.http_client = httpx.Client(timeout=60.0)
 
-    def chat(self, messages: List[Dict[str, str]], model: str = "MiniMax-Text-01", max_tokens: int = 2048) -> str:
+    def chat(self, messages: List[Dict[str, str]], model: str = "MiniMax-Text-01", max_tokens: int = 2048, temperature: float = 0.0) -> str:
         """Send chat request to MiniMax API."""
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -30,7 +30,8 @@ class MiniMaxClient:
         payload = {
             "model": model,
             "messages": messages,
-            "max_tokens": max_tokens
+            "max_tokens": max_tokens,
+            "temperature": temperature
         }
         response = self.http_client.post(
             f"{self.base_url}/text/chatcompletion_v2",
