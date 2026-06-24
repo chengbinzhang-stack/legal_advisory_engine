@@ -38,8 +38,8 @@ PERMISSION_PARAMS = [
     "free_redistribute", "subscription_redistribute"
 ]
 
-SYSTEM_PROMPT = """You are a legal analyst specializing in Terms of Service / Privacy Policy analysis.
-
+SYSTEM_PROMPT = "" \
+"
 Given the full text of a website's legal document, analyze it and output a structured JSON object describing permissions for 7 parameters.
 
 The 7 parameters to analyze:
@@ -151,7 +151,24 @@ Legal document text:
 
             for param in PERMISSION_PARAMS:
                 param_data = result.get(param, {})
-                perm_level = param_data.get("permission", "uncertain")
+                raw_perm = param_data.get("permission", "uncertain")
+
+                # Map LLM's varied permission strings to enum values
+                perm_map = {
+                    "allowed": "allowed",
+                    "not_allowed": "not_allowed",
+                    "not permitted": "not_allowed",
+                    "prohibited": "not_allowed",
+                    "restricted": "not_allowed",
+                    "uncertain": "uncertain",
+                    "unclear": "uncertain",
+                    "not applicable": "not_applicable",
+                    "n/a": "not_applicable",
+                    "allowed_with_attribution": "allowed",
+                    "allowed_without_attribution": "allowed",
+                    "not_allowed_with_attribution": "not_allowed",
+                }
+                perm_level = perm_map.get(raw_perm.lower() if isinstance(raw_perm, str) else raw_perm, "uncertain")
 
                 # Parse excerpts: [{"text": "...", "source": "actual_url"}]
                 raw_excerpts = param_data.get("relevant_excerpts", [])
