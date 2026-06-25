@@ -88,9 +88,7 @@ class ResponseGenerator:
     """
 
     PERMISSION_PARAMS = [
-        "scraping", "manual_collection", "storing",
-        "free_display", "subscription_display",
-        "free_redistribute", "subscription_redistribute"
+        "scrap", "store", "display_for_free", "display_for_commercial"
     ]
 
     def __init__(

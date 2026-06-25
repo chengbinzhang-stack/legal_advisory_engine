@@ -254,10 +254,10 @@ def render_dashboard_page():
                 "Domain": domain,
                 "URL": summary.get("website_url", "N/A"),
                 "Category": summary.get("category", "N/A"),
-                "Scraping": summary.get("permissions", {}).get("scraping", {}).get("level", "N/A"),
-                "Storing": summary.get("permissions", {}).get("storing", {}).get("level", "N/A"),
-                "Display": summary.get("permissions", {}).get("free_display", {}).get("level", "N/A"),
-                "Redistributing": summary.get("permissions", {}).get("free_redistribute", {}).get("level", "N/A")
+                "Scrap": summary.get("permissions", {}).get("scrap", {}).get("level", "N/A"),
+                "Store": summary.get("permissions", {}).get("store", {}).get("level", "N/A"),
+                "Display for Free": summary.get("permissions", {}).get("display_for_free", {}).get("level", "N/A"),
+                "Display for Commercial": summary.get("permissions", {}).get("display_for_commercial", {}).get("level", "N/A")
             })
     if data:
         import pandas as pd

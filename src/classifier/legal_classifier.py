@@ -8,6 +8,32 @@ from src.models.legal_analysis import (
 from src.classifier.category_buckets import CATEGORY_DEFINITIONS, WebsiteCategory, PARAM_TO_CATEGORY_FIELD
 
 
+# Secondary-pass prompt used to semantically resolve UNCERTAIN permission calls.
+# Forces the LLM to reason about commercial/revenue-generating intent, then
+# emit a strict Y/N answer grounded in the supplied reasoning + excerpts.
+UNCERTAIN_RESOLUTION_PROMPT = """You are resolving an UNCERTAIN permission classification.
+
+The 4 permission parameters and their definitions:
+1. scrap - whether automated crawling/scraping is allowed
+2. store - whether storing/caching data is allowed
+3. display_for_free - whether displaying content publicly for free is allowed
+4. display_for_commercial - whether displaying content behind a paywall / for commercial purposes is allowed
+
+For the parameter below, the first-pass LLM could not decide between allowed and not_allowed.
+Your job: read the reasoning and relevant excerpts, then determine whether the underlying
+content appears commercial or revenue-generating (e.g., subscription, paywall, ads,
+"Subscription", "paid access", "resale", "API fees", "premium tier"). Output ONLY
+one of:
+  - Y  (treat as ALLOWED, the document language supports it or is permissive)
+  - N  (treat as NOT_ALLOWED, the document language restricts it)
+
+You MUST also explain WHY in a single sentence starting with "Because".
+
+Output format (strict JSON, no markdown, no extra prose):
+{{"decision": "Y"|"N", "reasoning": "Because ..."}}
+"""
+
+
 def _build_llm_client(api_key: str, base_url: str):
     """Create MiniMax LLM client."""
     import httpx
@@ -70,22 +96,20 @@ def _build_gemini_client(api_key: str, model: str):
 
 
 PERMISSION_PARAMS = [
-    "scraping", "manual_collection", "storing",
-    "free_display", "subscription_display",
-    "free_redistribute", "subscription_redistribute"
+    "scrap",
+    "store",
+    "display_for_free",
+    "display_for_commercial",
 ]
 
 SYSTEM_PROMPT = """
-Given the full text of a website's legal document, analyze it and output a structured JSON object describing permissions for 7 parameters.
+Given the full text of a website's legal document, analyze it and output a structured JSON object describing permissions for 4 parameters.
 
-The 7 parameters to analyze:
-1. scraping - whether automated crawling/scraping is allowed
-2. manual_collection - whether manual copying/reading is allowed
-3. storing - whether storing/caching data is allowed
-4. free_display - whether displaying content publicly for free is allowed
-5. subscription_display - whether displaying content behind a paywall is allowed
-6. free_redistribute - whether redistributing/sharing/publishing content for free is allowed
-7. subscription_redistribute - whether redistributing content for commercial/subscription purposes is allowed
+The 4 parameters to analyze:
+1. scrap - whether automated crawling/scraping is allowed
+2. store - whether storing/caching data is allowed
+3. display_for_free - whether displaying content publicly for free is allowed
+4. display_for_commercial - whether displaying content behind a paywall or for commercial / revenue-generating purposes is allowed
 
 For each parameter, determine: allowed, not_allowed, or uncertain
 
@@ -95,13 +119,10 @@ Also extract:
 
 Output ONLY a valid JSON object with this exact structure (no markdown, no explanation):
 {
-  "scraping": {"permission": "allowed|not_allowed|uncertain", "reasoning": "...", "reference_urls": [], "relevant_excerpts": [{"text": "exact quote from document", "source": "https://actual/url/path"}]},
-  "manual_collection": {"permission": "...", "reasoning": "...", "reference_urls": [], "relevant_excerpts": []},
-  "storing": {"permission": "...", "reasoning": "...", "reference_urls": [], "relevant_excerpts": []},
-  "free_display": {"permission": "...", "reasoning": "...", "reference_urls": [], "relevant_excerpts": []},
-  "subscription_display": {"permission": "...", "reasoning": "...", "reference_urls": [], "relevant_excerpts": []},
-  "free_redistribute": {"permission": "...", "reasoning": "...", "reference_urls": [], "relevant_excerpts": []},
-  "subscription_redistribute": {"permission": "...", "reasoning": "...", "reference_urls": [], "relevant_excerpts": []},
+  "scrap": {"permission": "allowed|not_allowed|uncertain", "reasoning": "...", "reference_urls": [], "relevant_excerpts": [{"text": "exact quote from document", "source": "https://actual/url/path"}]},
+  "store": {"permission": "...", "reasoning": "...", "reference_urls": [], "relevant_excerpts": []},
+  "display_for_free": {"permission": "...", "reasoning": "...", "reference_urls": [], "relevant_excerpts": []},
+  "display_for_commercial": {"permission": "...", "reasoning": "...", "reference_urls": [], "relevant_excerpts": []},
   "reference_urls": ["https://..."],
   "unique_findings": ["Found indicators of ...", ...]
 }
@@ -213,7 +234,7 @@ Legal document text:
                     "allowed_without_attribution": "allowed",
                     "not_allowed_with_attribution": "not_allowed",
                 }
-                perm_level = perm_map.get(raw_perm.lower() if isinstance(raw_perm, str) else raw_perm, "uncertain")
+                perm_level_str = perm_map.get(raw_perm.lower() if isinstance(raw_perm, str) else raw_perm, "uncertain")
 
                 # Override perm_level based on reasoning keywords to fix LLM misclassifications
                 # The LLM may return "uncertain" or an incorrect label, but the reasoning text
@@ -242,9 +263,9 @@ Legal document text:
                 has_allow = any(kw in reasoning_lower for kw in allow_kw)
 
                 if has_forbid and not has_allow:
-                    perm_level = "not_allowed"
+                    perm_level_str = "not_allowed"
                 elif has_allow and not has_forbid:
-                    perm_level = "allowed"
+                    perm_level_str = "allowed"
                 elif has_forbid and has_allow:
                     # Both present — stay with LLM's original classification
                     pass
@@ -262,13 +283,57 @@ Legal document text:
                     elif isinstance(ex, str) and ex:
                         excerpt_list.append({"text": ex, "source": ""})
 
+                # Resolve uncertain buckets (6/7/8 in the PM spec — i.e. the params
+                # that frequently come back as ?) via a second LLM call that asks
+                # the model to reason about commercial / revenue-generating intent.
+                # Run AFTER the keyword-override pass so keyword-driven definite
+                # answers (Y/N) are not re-litigated.
+                #
+                # In the 4-perm schema (scrap / store / display_for_free /
+                # display_for_commercial), the commercial-intent semantic judgment
+                # is most decisive for `display_for_commercial` — but the same
+                # pass runs uniformly across all 4 axes so UNCERTAIN on any axis
+                # is given one chance to flip to a definite Y/N.
+                final_perm = PermissionLevel(perm_level_str)
+                final_reasoning = param_data.get("reasoning", "No reasoning provided")
+
+                if final_perm == PermissionLevel.UNCERTAIN:
+                    # Direct rule match for definite buckets (1-4): if a non-uncertain
+                    # value already came out of the first pass, the keyword override
+                    # pass would have caught it. Reaching here means we need LLM
+                    # semantic judgment to resolve the ? -> Y/N question.
+                    resolved_perm, resolved_reasoning = self._resolve_uncertain_param(
+                        param=param,
+                        reasoning=final_reasoning,
+                        excerpts=excerpt_list,
+                    )
+
+                    # Re-apply reasoning-keyword override on the resolved reasoning
+                    # so a "prohibited" / "you may" appearing in the new "Because ..."
+                    # justification still wins over the LLM's Y/N vote.
+                    resolved_lower = resolved_reasoning.lower()
+                    resolved_has_forbid = any(kw in resolved_lower for kw in forbid_kw)
+                    resolved_has_allow = any(kw in resolved_lower for kw in allow_kw)
+
+                    if resolved_has_forbid and not resolved_has_allow:
+                        final_perm = PermissionLevel.NOT_ALLOWED
+                    elif resolved_has_allow and not resolved_has_forbid:
+                        final_perm = PermissionLevel.ALLOWED
+                    elif resolved_perm == PermissionLevel.UNCERTAIN:
+                        # Resolution pass could not decide; keep uncertain.
+                        final_perm = PermissionLevel.UNCERTAIN
+                    else:
+                        final_perm = resolved_perm
+
+                    final_reasoning = resolved_reasoning
+
                 permission = PermissionAnalysis(
                     parameter_name=param,
-                    permission=PermissionLevel(perm_level),
-                    reasoning=param_data.get("reasoning", "No reasoning provided"),
+                    permission=final_perm,
+                    reasoning=final_reasoning,
                     relevant_excerpts=excerpt_list,
                     source_documents=[],  # No longer used, kept for backward compat
-                    confidence_score=0.95 if perm_level not in ("uncertain", "not_applicable") else 0.5
+                    confidence_score=0.95 if final_perm not in (PermissionLevel.UNCERTAIN, PermissionLevel.NOT_APPLICABLE) else 0.5
                 )
                 permissions[param] = permission
 
@@ -295,6 +360,97 @@ Legal document text:
         except Exception as e:
             # Fall back to heuristic on error
             return self._classify_heuristic(text, website_url, website_domain, robots_txt, str(e))
+
+    def _resolve_uncertain_param(
+        self,
+        param: str,
+        reasoning: str,
+        excerpts: List[Dict[str, str]]
+    ) -> Tuple[PermissionLevel, str]:
+        """
+        Secondary LLM pass used when a parameter is still marked UNCERTAIN after
+        the first classification pass. The LLM is asked: does the content seem
+        commercial / revenue-generating? It must return Y or N with a one-sentence
+        justification, which we map to ALLOWED / NOT_ALLOWED.
+
+        Uses temperature=0 for deterministic output. If the LLM is unavailable,
+        or the response is unparseable, the param stays UNCERTAIN.
+        """
+        if not self.llm_client:
+            return PermissionLevel.UNCERTAIN, reasoning
+
+        # Build a compact evidence packet from the first-pass reasoning + excerpts
+        excerpt_text = ""
+        for ex in (excerpts or [])[:5]:
+            if isinstance(ex, dict):
+                excerpt_text += f"\n- {ex.get('text', '')}"
+            elif isinstance(ex, str):
+                excerpt_text += f"\n- {ex}"
+
+        user_msg = (
+            f"Parameter: {param}\n\n"
+            f"First-pass reasoning:\n{reasoning}\n\n"
+            f"Relevant excerpts:{excerpt_text}"
+        )
+
+        try:
+            response = self.llm_client.chat(
+                [
+                    {"role": "system", "content": UNCERTAIN_RESOLUTION_PROMPT},
+                    {"role": "user", "content": user_msg},
+                ],
+                max_tokens=256,
+                temperature=0,
+            )
+
+            data = self._parse_llm_response(response)
+            decision = (data.get("decision") or "").strip().upper()
+            why = (data.get("reasoning") or "").strip()
+
+            if decision == "Y":
+                resolved = PermissionLevel.ALLOWED
+            elif decision == "N":
+                resolved = PermissionLevel.NOT_ALLOWED
+            else:
+                # Unparseable — leave as UNCERTAIN, keep original reasoning
+                return PermissionLevel.UNCERTAIN, reasoning
+
+            # Compose a richer reasoning that preserves the original LLM text
+            # plus the commercial-intent signal that flipped the call.
+            combined = f"{reasoning} [Uncertain-resolution: '{why}' -> {decision}]"
+            return resolved, combined
+
+        except Exception:
+            return PermissionLevel.UNCERTAIN, reasoning
+
+    def _apply_direct_rule_match(
+        self,
+        param: str,
+        perm_level: PermissionLevel,
+        reasoning: str
+    ) -> Tuple[PermissionLevel, str]:
+        """
+        Apply direct rule matching for definite Y/N cases (buckets 1-4).
+        Buckets 1-4 correspond to permission params that have a clear allowed /
+        not_allowed determination in the legal text. The existing keyword
+        override already handles these in `_classify_with_llm`. This helper
+        exists as a single, auditable chokepoint so future rule additions
+        (e.g. param-specific allow/forbid lists) can be added in one place.
+
+        The current implementation is a thin pass-through: it trusts the
+        keyword-override pass that already runs in `_classify_with_llm` and
+        only re-classifies UNCERTAIN results when no override fired. The
+        actual uncertain-resolution (which may flip ? -> Y/N) lives in
+        `_resolve_uncertain_param`.
+        """
+        # Definite buckets (1-4): the first-pass result is either Y or N.
+        # If the first pass already produced a definite answer, keep it.
+        if perm_level != PermissionLevel.UNCERTAIN:
+            return perm_level, reasoning
+
+        # For uncertain cases the caller will route through
+        # `_resolve_uncertain_param`. We don't double-resolve here.
+        return perm_level, reasoning
 
     def _parse_llm_response(self, response: str) -> dict:
         """
@@ -344,33 +500,21 @@ Legal document text:
 
         # Build a simple heuristic for each param
         param_rules = {
-            "scraping": {
-                "forbidden": ["prohibit scraping", "scraping prohibited", "no automated"],
-                "allowed": ["scrap", "crawl", "bot"]
+            "scrap": {
+                "forbidden": ["prohibit scraping", "scraping prohibited", "no automated", "no scraping"],
+                "allowed": ["scrap", "crawl", "bot", "automated access"]
             },
-            "manual_collection": {
-                "forbidden": ["cannot copy", "copying prohibited"],
-                "allowed": ["manual", "copy", "read", "browse"]
+            "store": {
+                "forbidden": ["cannot store", "no storage", "no caching", "may not cache"],
+                "allowed": ["store", "cache", "retain", "archive"]
             },
-            "storing": {
-                "forbidden": ["cannot store", "no storage"],
-                "allowed": ["store", "cache", "retain"]
+            "display_for_free": {
+                "forbidden": ["cannot display", "display prohibited", "no public display"],
+                "allowed": ["display", "show", "view", "public", "free use"]
             },
-            "free_display": {
-                "forbidden": ["cannot display", "display prohibited"],
-                "allowed": ["display", "show", "view", "public"]
-            },
-            "subscription_display": {
-                "forbidden": ["no paid access", "subscription not allowed"],
-                "allowed": ["subscription", "paid", "premium"]
-            },
-            "free_redistribute": {
-                "forbidden": ["cannot redistribute", "no redistribution", "must not distribute", "may not distribute"],
-                "allowed": ["redistribute", "share", "distribute", "publish"]
-            },
-            "subscription_redistribute": {
-                "forbidden": ["cannot redistribute", "no redistribution", "resale not allowed"],
-                "allowed": ["redistribute", "share", "sell"]
+            "display_for_commercial": {
+                "forbidden": ["no paid access", "no commercial use", "non-commercial only", "commercial use prohibited"],
+                "allowed": ["subscription", "paid", "premium", "commercial", "paywall", "monetize"]
             },
         }
 
@@ -378,8 +522,8 @@ Legal document text:
             forbid_count = sum(1 for kw in rules["forbidden"] if kw in text_lower)
             allow_count = sum(1 for kw in rules["allowed"] if kw in text_lower)
 
-            # Negation context check for redistribute
-            if param in ["free_redistribute", "subscription_redistribute"]:
+            # Negation context check for display params (where "no X" is a common prohibition)
+            if param in ["display_for_free", "display_for_commercial", "store"]:
                 negate_count = self._count_negation_contexts(text_lower, rules["allowed"])
                 allow_count = max(0, allow_count - negate_count)
                 forbid_count += negate_count
@@ -444,18 +588,44 @@ Legal document text:
         permissions: Dict[str, PermissionAnalysis]
     ) -> Tuple[WebsiteCategory, str]:
         """
-        Determine bucket by profile matching: for each bucket, count how many
-        of its expected-permitted params are ALLOWED and how many of its
-        expected-prohibited params are NOT_ALLOWED. Score = matches - mismatches.
-        The bucket with the highest score is the best fit.
+        Determine bucket by profile matching against the 4 permission axes
+        (scrap, store, display_for_free, display_for_commercial).
+
+        For each bucket, for each axis where the bucket profile specifies
+        a definite value (True/False):
+          +1 if the actual permission matches the expectation
+          -1 if it contradicts the expectation
+          0  if the actual permission is UNCERTAIN
+
+        Axes where the bucket profile is None (wildcard, i.e. buckets 6/7/8
+        trailing axes) contribute 0 — the LLM semantic-judgment pass that
+        resolves ? -> Y/N is what eventually determines whether those wildcards
+        match buckets 1-4 (which have definite profiles) or fall through to
+        6/7/8 (which leave those axes open).
+
+        The bucket with the highest score wins. Tie-break rule: when two or
+        more buckets tie on score, prefer the bucket with MORE wildcard axes
+        (i.e. the more "uncertain" / less committed bucket). This means
+        BUCKET_6/7/8 naturally surface when the LLM could not produce a
+        definite Y/N on the trailing axes, while still letting a fully
+        definite bucket (BUCKET_1-4) win when it scores strictly higher.
         """
-        best_bucket = WebsiteCategory.BUCKET_4
+        best_bucket: Optional[WebsiteCategory] = None
         best_score = -999
+        best_wildcards = -1  # higher = more uncertain bucket wins on tie
 
         for bucket, definition in CATEGORY_DEFINITIONS.items():
             score = 0
+            wildcards = 0
             for param_name, category_field in PARAM_TO_CATEGORY_FIELD.items():
                 expected_allowed = getattr(definition, category_field)
+                # Wildcard axis: bucket is permissive about this dimension,
+                # so neither match nor mismatch is recorded. The LLM
+                # semantic-judgment pass (which turns ? into Y/N) is what
+                # narrows the bucket fit.
+                if expected_allowed is None:
+                    wildcards += 1
+                    continue
                 actual = permissions.get(param_name)
                 if actual is None:
                     continue
@@ -476,9 +646,18 @@ Legal document text:
                         score -= 1  # violates expectation (allowed when bucket expects not)
                     # uncertain: no score change
 
-            if score > best_score:
+            # Strictly higher score wins. On score tie, more wildcards wins
+            # (so uncertain buckets surface when the LLM left axes open).
+            if (score > best_score) or (score == best_score and wildcards > best_wildcards):
                 best_score = score
                 best_bucket = bucket
+                best_wildcards = wildcards
+
+        # Default safety net: if nothing matched (shouldn't normally happen),
+        # fall back to BUCKET_8 (Fully Uncertain).
+        if best_bucket is None:
+            best_bucket = WebsiteCategory.BUCKET_8
+            best_score = 0
 
         definitions = CATEGORY_DEFINITIONS[best_bucket]
         reasoning = f"Website matches {definitions.name} profile with score {best_score}"
