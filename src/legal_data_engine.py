@@ -94,6 +94,9 @@ class LegalDataEngine:
         for doc in website_data.documents:
             if doc.success and doc.raw_content:
                 texts.append(doc.raw_content)
+            elif doc.document_type == "robots_txt" and not doc.success:
+                # Explicitly note robots.txt not found to prevent LLM hallucination
+                texts.append("[robots.txt: not found - HTTP 404]")
         return "\n\n".join(texts)
 
     def _extract_domain(self, url: str) -> str:
