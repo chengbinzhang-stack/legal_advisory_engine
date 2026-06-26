@@ -298,34 +298,50 @@ Legal document text:
                 final_reasoning = param_data.get("reasoning", "No reasoning provided")
 
                 if final_perm == PermissionLevel.UNCERTAIN:
-                    # Direct rule match for definite buckets (1-4): if a non-uncertain
-                    # value already came out of the first pass, the keyword override
-                    # pass would have caught it. Reaching here means we need LLM
-                    # semantic judgment to resolve the ? -> Y/N question.
-                    resolved_perm, resolved_reasoning = self._resolve_uncertain_param(
-                        param=param,
-                        reasoning=final_reasoning,
-                        excerpts=excerpt_list,
+                    # If the original reasoning explicitly says the document doesn't
+                    # address this permission (uses "does not provide", "not mentioned",
+                    # "no information", etc.), do NOT try to resolve via second LLM
+                    # call — just keep it UNCERTAIN. The document simply doesn't say.
+                    uncertain_indicators = [
+                        "does not provide", "does not mention", "not mentioned",
+                        "no information", "not addressed", "not covered",
+                        "not discussed", "no mention", "without explicit",
+                        "cannot be determined", "indeterminate"
+                    ]
+                    reasoning_lower = final_reasoning.lower()
+                    doc_does_not_address = any(
+                        indicator in reasoning_lower for indicator in uncertain_indicators
                     )
 
-                    # Re-apply reasoning-keyword override on the resolved reasoning
-                    # so a "prohibited" / "you may" appearing in the new "Because ..."
-                    # justification still wins over the LLM's Y/N vote.
-                    resolved_lower = resolved_reasoning.lower()
-                    resolved_has_forbid = any(kw in resolved_lower for kw in forbid_kw)
-                    resolved_has_allow = any(kw in resolved_lower for kw in allow_kw)
-
-                    if resolved_has_forbid and not resolved_has_allow:
-                        final_perm = PermissionLevel.NOT_ALLOWED
-                    elif resolved_has_allow and not resolved_has_forbid:
-                        final_perm = PermissionLevel.ALLOWED
-                    elif resolved_perm == PermissionLevel.UNCERTAIN:
-                        # Resolution pass could not decide; keep uncertain.
-                        final_perm = PermissionLevel.UNCERTAIN
+                    if doc_does_not_address:
+                        # Document doesn't address this permission — stay uncertain
+                        pass
                     else:
-                        final_perm = resolved_perm
+                        # Try to resolve via second LLM call for semantic judgment
+                        resolved_perm, resolved_reasoning = self._resolve_uncertain_param(
+                            param=param,
+                            reasoning=final_reasoning,
+                            excerpts=excerpt_list,
+                        )
 
-                    final_reasoning = resolved_reasoning
+                        # Re-apply reasoning-keyword override on the resolved reasoning
+                        # so a "prohibited" / "you may" appearing in the new "Because ..."
+                        # justification still wins over the LLM's Y/N vote.
+                        resolved_lower = resolved_reasoning.lower()
+                        resolved_has_forbid = any(kw in resolved_lower for kw in forbid_kw)
+                        resolved_has_allow = any(kw in resolved_lower for kw in allow_kw)
+
+                        if resolved_has_forbid and not resolved_has_allow:
+                            final_perm = PermissionLevel.NOT_ALLOWED
+                        elif resolved_has_allow and not resolved_has_forbid:
+                            final_perm = PermissionLevel.ALLOWED
+                        elif resolved_perm == PermissionLevel.UNCERTAIN:
+                            # Resolution pass could not decide; keep uncertain.
+                            final_perm = PermissionLevel.UNCERTAIN
+                        else:
+                            final_perm = resolved_perm
+
+                        final_reasoning = resolved_reasoning
 
                 permission = PermissionAnalysis(
                     parameter_name=param,
