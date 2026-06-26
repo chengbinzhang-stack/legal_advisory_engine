@@ -23,12 +23,6 @@ IMPORTANT — Neutrality rule:
 - When answering permission questions, quote the relevant excerpt and name the source document.
 Be concise but thorough. Cite specific sections or excerpts when relevant."""
 
-IMPORTANT — Neutrality rule:
-- Report exactly what the legal documents state. Do NOT bias toward allowing or restricting.
-- If a document permits something, say so clearly. If it prohibits something, say so clearly. Do not add your own caution or safety filtering.
-- When answering permission questions, quote the relevant excerpt and name the source document.
-Be concise but thorough. Cite specific sections or excerpts when relevant."""
-
     def build_query_prompt(
         self,
         query: str,

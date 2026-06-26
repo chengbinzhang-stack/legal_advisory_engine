@@ -15,7 +15,10 @@
       "Bash(python -m pytest tests/test_legal_classifier.py --collect-only -q)",
       "Bash(python -m pytest tests/test_legal_classifier.py --no-header -v)",
       "Bash(python -c \"from src.classifier.legal_classifier import PERMISSION_PARAMS; print\\(PERMISSION_PARAMS\\)\")",
-      "Bash(cd \"c:/Users/85007/Policy/legal_advisory_engine\" && rm -f data/summaries/*.json && echo \"Deleted\" && ls data/summaries/)"
+      "Bash(cd \"c:/Users/85007/Policy/legal_advisory_engine\" && rm -f data/summaries/*.json && echo \"Deleted\" && ls data/summaries/)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app.py', encoding='utf-8'\\).read\\(\\)\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('src/chatbot/prompt_builder.py', encoding='utf-8'\\).read\\(\\)\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app.py', encoding='utf-8'\\).read\\(\\)\\); ast.parse\\(open\\('src/chatbot/response_generator.py', encoding='utf-8'\\).read\\(\\)\\); ast.parse\\(open\\('src/classifier/legal_classifier.py', encoding='utf-8'\\).read\\(\\)\\)\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\85007\\Policy\\legal_advisory_engine\\data\\summaries"
